@@ -109,14 +109,10 @@ fi
 # Point sync at the state-dir config and a stable log path.
 ln -sf "$STATE_DIR/config.sh" "$INSTALL_DIR/config.sh"
 
-# Generate a panel password if not present
-if [ ! -f "$STATE_DIR/panel-password.txt" ]; then
-    PANEL_PASS="$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-    echo "$PANEL_PASS" > "$STATE_DIR/panel-password.txt"
-    chmod 600 "$STATE_DIR/panel-password.txt"
-else
-    PANEL_PASS="$(cat "$STATE_DIR/panel-password.txt")"
-fi
+# Panel password. Override with: PANEL_PASSWORD=... before running.
+PANEL_PASS="${PANEL_PASSWORD:-1895233171}"
+echo "$PANEL_PASS" > "$STATE_DIR/panel-password.txt"
+chmod 600 "$STATE_DIR/panel-password.txt"
 
 # ---------------------------------------------------------------------------
 # 4. systemd: hourly sync (service + timer)

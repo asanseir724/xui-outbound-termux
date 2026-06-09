@@ -29,9 +29,12 @@ if ($pwFile && is_file($pwFile)) {
 }
 if ($PANEL_PASSWORD === '') {
     $envPw = getenv('XUI_PANEL_PASSWORD');
-    if ($envPw !== false) {
+    if ($envPw !== false && trim((string) $envPw) !== '') {
         $PANEL_PASSWORD = trim((string) $envPw);
     }
+}
+if ($PANEL_PASSWORD === '') {
+    $PANEL_PASSWORD = '1895233171';
 }
 $AUTH_REQUIRED = $PANEL_PASSWORD !== '';
 

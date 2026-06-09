@@ -25,8 +25,10 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 
 ```
 پنل تنظیمات:  http://SERVER_IP:8088
-رمز ورود پنل:  a1b2c3d4e5f6...
+رمز ورود پنل:  1895233171
 ```
+
+> رمز پیش‌فرض پنل `1895233171` است. برای تغییر، قبل از نصب `PANEL_PASSWORD=...` بگذارید یا بعداً فایل `/etc/xui-outbound/panel-password.txt` را ویرایش و `systemctl restart xui-panel` کنید.
 
 آدرس را در مرورگر باز کنید، با رمز وارد شوید، **آدرس سایت وردپرس و توکن** را ذخیره کنید و «اجرای همگام‌سازی الان» را بزنید.
 
