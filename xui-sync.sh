@@ -119,18 +119,32 @@ sync_once() {
     push_url="$SITE_URL/wp-json/xui/v1/outbound-mobile/push"
 
     log "Fetching source list from host…"
+    local http_code
     sources_json="$(api_curl \
         -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
         -H "Accept: application/json" \
+        -w $'\n%{http_code}' \
         "$sources_url")"
+    http_code="${sources_json##*$'\n'}"
+    sources_json="${sources_json%$'\n'*}"
 
     if [ -z "$sources_json" ]; then
-        log "[ERROR] Empty response from host (check SITE_URL / network)."
+        log "[ERROR] Empty response from host (check SITE_URL / network). HTTP=$http_code"
+        return 1
+    fi
+
+    # If the response is not valid JSON, the URL is wrong or WP returned HTML.
+    if ! echo "$sources_json" | jq -e . >/dev/null 2>&1; then
+        local preview
+        preview="$(echo "$sources_json" | tr '\n' ' ' | cut -c1-160)"
+        log "[ERROR] Host did not return JSON (HTTP=$http_code). URL: $sources_url"
+        log "        Response starts with: $preview"
+        log "        Check SITE_URL is correct and the xui-vpn-manager plugin is active."
         return 1
     fi
 
     if [ "$(echo "$sources_json" | jq -r '.success // false')" != "true" ]; then
-        log "[ERROR] Host rejected request: $(echo "$sources_json" | jq -r '.msg // "unknown error"')"
+        log "[ERROR] Host rejected request (HTTP=$http_code): $(echo "$sources_json" | jq -r '.msg // "unknown error"')"
         return 1
     fi
 
