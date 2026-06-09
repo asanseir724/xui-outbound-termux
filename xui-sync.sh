@@ -111,12 +111,49 @@ sub_curl() {
 # ---------------------------------------------------------------------------
 # Sync one cycle
 # ---------------------------------------------------------------------------
+# Build a REST endpoint URL. Pretty permalinks use /wp-json/<route>; if those
+# are disabled (Plain permalinks / broken rewrite) WordPress still serves the
+# API at ?rest_route=/<route>. We auto-detect which one works and cache it.
+REST_STYLE=""
+rest_url() {
+    local route="$1"
+    if [ "$REST_STYLE" = "query" ]; then
+        echo "$SITE_URL/?rest_route=/$route"
+    else
+        echo "$SITE_URL/wp-json/$route"
+    fi
+}
+
+detect_rest_style() {
+    # Try pretty permalink first.
+    local code
+    code="$(api_curl -o /dev/null -w '%{http_code}' \
+        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+        "$SITE_URL/wp-json/xui/v1/outbound-mobile/sources" 2>/dev/null)"
+    if [ "$code" = "200" ] || [ "$code" = "403" ]; then
+        REST_STYLE="pretty"
+        return 0
+    fi
+    # Fall back to ?rest_route= form.
+    code="$(api_curl -o /dev/null -w '%{http_code}' \
+        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+        "$SITE_URL/?rest_route=/xui/v1/outbound-mobile/sources" 2>/dev/null)"
+    if [ "$code" = "200" ] || [ "$code" = "403" ]; then
+        REST_STYLE="query"
+        log "Note: pretty permalinks unavailable, using ?rest_route= fallback."
+        return 0
+    fi
+    REST_STYLE="pretty"
+    return 1
+}
+
 sync_once() {
     validate_config
 
     local sources_url push_url sources_json ok_count fail_count
-    sources_url="$SITE_URL/wp-json/xui/v1/outbound-mobile/sources"
-    push_url="$SITE_URL/wp-json/xui/v1/outbound-mobile/push"
+    detect_rest_style || true
+    sources_url="$(rest_url 'xui/v1/outbound-mobile/sources')"
+    push_url="$(rest_url 'xui/v1/outbound-mobile/push')"
 
     log "Fetching source list from host…"
     local http_code
