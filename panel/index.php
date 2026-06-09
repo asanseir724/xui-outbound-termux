@@ -1,18 +1,83 @@
 <?php
 /**
- * xui-outbound-termux — local web admin panel.
+ * xui-outbound — web admin panel (single file).
  *
- * A single-file PHP admin served by the PHP built-in server inside Termux.
- * Lets you edit config.sh, run a sync, test the connection and read the log
- * from your phone (or any device on the same Wi-Fi) using a browser.
+ * Served by the PHP built-in server (Termux or a Linux VPS). Lets you edit
+ * config.sh, run a sync, test the connection and read the log from a browser.
+ *
+ * When XUI_PANEL_PASSWORD_FILE points at a file with a password (set by the
+ * VPS installer), the panel requires login — important since a VPS exposes it
+ * to the public internet.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
+
+session_start();
 
 $PROJECT_DIR = dirname(__DIR__);
 $CONFIG_FILE = $PROJECT_DIR . '/config.sh';
 $EXAMPLE_FILE = $PROJECT_DIR . '/config.example.sh';
 $SYNC_SCRIPT = $PROJECT_DIR . '/xui-sync.sh';
+
+// ---------------------------------------------------------------------------
+// Optional password gate (enabled on VPS where the panel is public)
+// ---------------------------------------------------------------------------
+$PANEL_PASSWORD = '';
+$pwFile = getenv('XUI_PANEL_PASSWORD_FILE');
+if ($pwFile && is_file($pwFile)) {
+    $PANEL_PASSWORD = trim((string) file_get_contents($pwFile));
+}
+if ($PANEL_PASSWORD === '') {
+    $envPw = getenv('XUI_PANEL_PASSWORD');
+    if ($envPw !== false) {
+        $PANEL_PASSWORD = trim((string) $envPw);
+    }
+}
+$AUTH_REQUIRED = $PANEL_PASSWORD !== '';
+
+if ($AUTH_REQUIRED) {
+    if (isset($_GET['logout'])) {
+        $_SESSION = [];
+        session_destroy();
+        header('Location: ' . strtok($_SERVER['REQUEST_URI'], '?'));
+        exit;
+    }
+
+    $login_error = '';
+    if (($_POST['action'] ?? '') === 'login') {
+        if (hash_equals($PANEL_PASSWORD, (string) ($_POST['password'] ?? ''))) {
+            $_SESSION['xui_auth'] = true;
+        } else {
+            $login_error = 'رمز اشتباه است.';
+        }
+    }
+
+    if (empty($_SESSION['xui_auth'])) {
+        ?>
+<!DOCTYPE html>
+<html lang="fa" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ورود — XUI Outbound</title>
+<style>
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Tahoma,sans-serif;background:#0f1220;color:#e7e9f3;display:flex;min-height:100vh;align-items:center;justify-content:center;}
+  .box{background:#191d31;border:1px solid #2b3150;border-radius:14px;padding:24px;width:320px;max-width:90vw;}
+  h1{font-size:18px;margin:0 0 16px;}
+  input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid #2b3150;background:#0d1020;color:#e7e9f3;font-size:14px;box-sizing:border-box;}
+  button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:10px;background:#5b7cff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+  .err{color:#ff8aa0;font-size:13px;margin-top:10px;}
+</style></head><body>
+  <form class="box" method="post">
+    <h1>ورود به پنل</h1>
+    <input type="hidden" name="action" value="login">
+    <input type="password" name="password" placeholder="رمز ورود" autofocus>
+    <button type="submit">ورود</button>
+    <?php if (!empty($login_error)): ?><div class="err"><?= htmlspecialchars($login_error) ?></div><?php endif; ?>
+  </form>
+</body></html>
+        <?php
+        exit;
+    }
+}
 
 $FIELDS = [
     'SITE_URL'       => ['label' => 'آدرس سایت وردپرس', 'placeholder' => 'https://your-wp-site.com', 'type' => 'text'],
@@ -163,7 +228,12 @@ function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
 <body>
 <div class="wrap">
   <h1>پنل تنظیمات XUI Outbound</h1>
-  <div class="sub">دریافت ساب از گوشی و ارسال به وردپرس — اجرای ساعتی خودکار</div>
+  <div class="sub">
+    دریافت ساب و ارسال به وردپرس — اجرای ساعتی خودکار
+    <?php if ($AUTH_REQUIRED): ?>
+      · <a href="?logout=1" style="color:var(--acc);text-decoration:none;">خروج</a>
+    <?php endif; ?>
+  </div>
 
   <?php if ($notice): ?>
     <div class="notice <?= $notice_type === 'err' ? 'err' : 'ok' ?>"><?= h($notice) ?></div>

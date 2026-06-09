@@ -1,8 +1,8 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 #
-# xui-outbound-termux — fetch foreign subscription lists on an Android phone
-# (via Termux) and push them to the X-UI VPN Manager WordPress plugin so they
-# get registered as Xray outbounds inside the 3x-ui panel balancer.
+# xui-outbound — fetch foreign subscription lists and push them to the
+# X-UI VPN Manager WordPress plugin so they get registered as Xray outbounds
+# inside the 3x-ui panel balancer. Works on a Linux VPS and on Termux.
 #
 # Usage:
 #   ./xui-sync.sh once     # run a single sync cycle (use this from cron)
