@@ -1,0 +1,5 @@
+# Local config holds your token — never commit it
+config.sh
+
+# Logs
+*.log
