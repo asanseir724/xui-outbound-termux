@@ -16,6 +16,14 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/xui-outbound}"
 PANEL_PORT="${PANEL_PORT:-8088}"
 STATE_DIR="/etc/xui-outbound"
 
+# Never let apt/needrestart or git open an interactive prompt — this script is
+# often piped through `| bash`, where a prompt would hang forever.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+export GIT_TERMINAL_PROMPT=0
+export GIT_ASKPASS=true
+
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
         echo "==> Re-running with sudo…"
@@ -50,21 +58,39 @@ fi
 # 2. Fetch project
 # ---------------------------------------------------------------------------
 echo "==> Fetching project to $INSTALL_DIR…"
-if command -v git >/dev/null 2>&1 && git ls-remote "$REPO" HEAD >/dev/null 2>&1; then
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        git -C "$INSTALL_DIR" pull --ff-only || true
-    else
-        rm -rf "$INSTALL_DIR"
-        git clone "$REPO" "$INSTALL_DIR"
-    fi
-else
-    echo "==> git unavailable, downloading ZIP…"
+fetched=""
+
+# Prefer ZIP download (no git prompts, no hangs, very reliable).
+download_zip() {
+    local tmp
     tmp="$(mktemp -d)"
-    curl -fsSL "$ZIP_URL" -o "$tmp/main.zip"
-    unzip -qo "$tmp/main.zip" -d "$tmp"
-    rm -rf "$INSTALL_DIR"
-    mv "$tmp/xui-outbound-termux-main" "$INSTALL_DIR"
+    if curl -fsSL --connect-timeout 15 --max-time 120 "$ZIP_URL" -o "$tmp/main.zip" \
+        && unzip -qo "$tmp/main.zip" -d "$tmp" 2>/dev/null; then
+        rm -rf "$INSTALL_DIR"
+        mv "$tmp"/xui-outbound-termux-* "$INSTALL_DIR"
+        rm -rf "$tmp"
+        return 0
+    fi
     rm -rf "$tmp"
+    return 1
+}
+
+if download_zip; then
+    echo "==> Fetched via ZIP."
+    fetched="yes"
+elif command -v git >/dev/null 2>&1; then
+    echo "==> ZIP failed, trying git clone…"
+    rm -rf "$INSTALL_DIR"
+    if git clone --depth 1 "$REPO" "$INSTALL_DIR"; then
+        echo "==> Fetched via git."
+        fetched="yes"
+    fi
+fi
+
+if [ -z "$fetched" ]; then
+    echo "[ERROR] Could not download the project (network/firewall?)." >&2
+    echo "        Test: curl -I $ZIP_URL" >&2
+    exit 1
 fi
 
 # Normalize line endings + perms
