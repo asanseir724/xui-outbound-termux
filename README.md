@@ -38,7 +38,7 @@
 ۲. این **یک دستور** را در Termux اجرا کنید (به‌جای `USERNAME` نام گیت‌هاب خودتان):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USERNAME/xui-outbound-termux/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/setup.sh | bash
 ```
 
 همین! این دستور همه‌ی پیش‌نیازها را نصب می‌کند، پروژه را می‌گیرد، سرویس همگام‌سازی ساعتی و **پنل وب محلی** را راه می‌اندازد، قفل بیداری را روشن می‌کند و در پایان **آدرس پنل** را چاپ می‌کند.
