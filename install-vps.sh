@@ -102,11 +102,16 @@ chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
 # ---------------------------------------------------------------------------
 # 3. Config
 # ---------------------------------------------------------------------------
-mkdir -p "$STATE_DIR"
+mkdir -p "$STATE_DIR" /var/log/xui-outbound
 if [ ! -f "$STATE_DIR/config.sh" ]; then
     cp "$INSTALL_DIR/config.example.sh" "$STATE_DIR/config.sh"
 fi
-# Point sync at the state-dir config and a stable log path.
+# VPS paths: no $HOME dependency.
+if grep -q '^LOG_FILE=' "$STATE_DIR/config.sh" 2>/dev/null; then
+    sed -i 's|^LOG_FILE=.*|LOG_FILE="/var/log/xui-outbound/sync.log"|' "$STATE_DIR/config.sh"
+else
+    echo 'LOG_FILE="/var/log/xui-outbound/sync.log"' >> "$STATE_DIR/config.sh"
+fi
 ln -sf "$STATE_DIR/config.sh" "$INSTALL_DIR/config.sh"
 
 # Panel password. Override with: PANEL_PASSWORD=... before running.
@@ -127,6 +132,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
+Environment=XUI_STATE_DIR=$STATE_DIR
 Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
 ExecStart=/usr/bin/env bash $INSTALL_DIR/xui-sync.sh once
 UNIT
@@ -155,8 +162,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=HOME=/root
 Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
 Environment=XUI_PANEL_PASSWORD_FILE=$STATE_DIR/panel-password.txt
+Environment=XUI_STATE_DIR=$STATE_DIR
 WorkingDirectory=$INSTALL_DIR
 ExecStart=/usr/bin/php -S 0.0.0.0:$PANEL_PORT -t $INSTALL_DIR/panel
 Restart=always

@@ -15,7 +15,11 @@
 #
 set -u
 
+# systemd / PHP shell_exec often run without HOME — set a safe default first.
+export HOME="${HOME:-/root}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+STATE_DIR="${XUI_STATE_DIR:-/etc/xui-outbound}"
 
 # ---------------------------------------------------------------------------
 # Load config
@@ -45,7 +49,13 @@ INTERVAL_MIN="${INTERVAL_MIN:-60}"
 SUB_USER_AGENT="${SUB_USER_AGENT:-HiddifyNext/4.1.0 (Android) v2rayNG/1.8.0}"
 PROXY_URL="${PROXY_URL:-}"
 FETCH_TIMEOUT="${FETCH_TIMEOUT:-45}"
-LOG_FILE="${LOG_FILE:-$HOME/.config/xui-sync/sync.log}"
+if [ -z "${LOG_FILE:-}" ]; then
+    if [ -d "$STATE_DIR" ]; then
+        LOG_FILE="/var/log/xui-outbound/sync.log"
+    else
+        LOG_FILE="$HOME/.config/xui-sync/sync.log"
+    fi
+fi
 
 # Normalize site URL (strip trailing slash)
 SITE_URL="${SITE_URL%/}"

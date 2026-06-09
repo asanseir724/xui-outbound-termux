@@ -173,7 +173,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notice_type = 'err';
         } else {
             @chmod($SYNC_SCRIPT, 0755);
-            $cmd = 'bash ' . escapeshellarg($SYNC_SCRIPT) . ' once 2>&1';
+            $home = getenv('HOME') ?: '/root';
+            $syncConfig = is_file('/etc/xui-outbound/config.sh')
+                ? '/etc/xui-outbound/config.sh'
+                : $CONFIG_FILE;
+            $env = 'HOME=' . escapeshellarg($home)
+                . ' XUI_SYNC_CONFIG=' . escapeshellarg($syncConfig)
+                . ' XUI_STATE_DIR=/etc/xui-outbound';
+            $cmd = $env . ' bash ' . escapeshellarg($SYNC_SCRIPT) . ' once 2>&1';
             $run_output = (string) shell_exec($cmd);
             $notice = 'همگام‌سازی اجرا شد.';
         }
@@ -182,8 +189,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cfg = read_config($CONFIG_FILE, $DEFAULTS);
 }
 
-$logPath = $cfg['LOG_FILE'] !== '' ? $cfg['LOG_FILE'] : getenv('HOME') . '/.config/xui-sync/sync.log';
-$logPath = str_replace('$HOME', (string) getenv('HOME'), $logPath);
+$defaultLog = is_dir('/etc/xui-outbound')
+    ? '/var/log/xui-outbound/sync.log'
+    : ((getenv('HOME') ?: '/root') . '/.config/xui-sync/sync.log');
+$logPath = $cfg['LOG_FILE'] !== '' ? $cfg['LOG_FILE'] : $defaultLog;
+$logPath = str_replace('$HOME', getenv('HOME') ?: '/root', $logPath);
 $logTxt = tail_file($logPath);
 $configExists = is_file($CONFIG_FILE);
 
