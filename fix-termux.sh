@@ -4,6 +4,7 @@
 #
 # Common errors this fixes:
 #   - libssl.so.1.1 not found
+#   - curl: cannot locate symbol ngtcp2_crypto_get_path_challenge_data2_cb
 #   - Unable to lock directory ... apt/lists/
 #   - git-remote-https / apt methods https aborted
 #
@@ -38,11 +39,12 @@ pkg update -y
 echo "==> pkg upgrade (may take a few minutes)..."
 pkg upgrade -y
 
-echo "==> Installing/repairing openssl..."
-pkg install -y openssl
+echo "==> Installing/repairing openssl + curl deps..."
+pkg install -y openssl libngtcp2 libnghttp3
+pkg reinstall -y curl 2>/dev/null || pkg install -y curl
 
 echo "==> Installing core tools..."
-pkg install -y curl jq php cronie git unzip
+pkg install -y jq php cronie git unzip
 
 echo ""
 echo "==> Quick self-test..."
