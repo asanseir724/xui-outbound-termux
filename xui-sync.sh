@@ -15,6 +15,9 @@
 #
 set -u
 
+# Bump when push/sync behaviour changes (shown in panel + first log line).
+XUI_SYNC_VERSION="20260701-rawbody"
+
 # systemd / PHP shell_exec often run without HOME — set a safe default first.
 export HOME="${HOME:-/root}"
 
@@ -49,6 +52,8 @@ INTERVAL_MIN="${INTERVAL_MIN:-60}"
 SUB_USER_AGENT="${SUB_USER_AGENT:-HiddifyNext/4.1.0 (Android) v2rayNG/1.8.0}"
 PROXY_URL="${PROXY_URL:-}"
 FETCH_TIMEOUT="${FETCH_TIMEOUT:-45}"
+FETCH_RETRIES="${FETCH_RETRIES:-3}"
+FETCH_RETRY_DELAY="${FETCH_RETRY_DELAY:-15}"
 if [ -z "${LOG_FILE:-}" ]; then
     if [ -d "$STATE_DIR" ]; then
         LOG_FILE="/var/log/xui-outbound/sync.log"
@@ -108,6 +113,50 @@ sub_curl() {
     fi
 }
 
+# Fetch subscription body into $1 with retries (DNS/proxy blips are common).
+# Returns 0 when the file is non-empty, 1 otherwise.
+fetch_sub_to_file() {
+    local dest="$1"
+    local url="$2"
+    local label="${3:-subscription}"
+    local attempt max_attempts delay curl_err
+
+    max_attempts=$((FETCH_RETRIES > 0 ? FETCH_RETRIES : 1))
+    delay=$((FETCH_RETRY_DELAY > 0 ? FETCH_RETRY_DELAY : 10))
+
+    attempt=1
+    while [ "$attempt" -le "$max_attempts" ]; do
+        : >"$dest"
+        curl_err="$(sub_curl \
+            -H "User-Agent: $SUB_USER_AGENT" \
+            -H "Accept: */*" \
+            -o "$dest" \
+            "$url" 2>&1)"
+        local curl_rc=$?
+
+        if [ "$curl_rc" -eq 0 ] && [ -s "$dest" ]; then
+            if [ "$attempt" -gt 1 ]; then
+                log "  $label: fetch OK on attempt $attempt/$max_attempts."
+            fi
+            return 0
+        fi
+
+        if [ -n "$curl_err" ]; then
+            log "  $label: attempt $attempt/$max_attempts failed — ${curl_err//$'\n'/ }"
+        else
+            log "  $label: attempt $attempt/$max_attempts failed — empty body."
+        fi
+
+        if [ "$attempt" -lt "$max_attempts" ]; then
+            log "  $label: retrying in ${delay}s…"
+            sleep "$delay"
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # Sync one cycle
 # ---------------------------------------------------------------------------
@@ -149,6 +198,7 @@ detect_rest_style() {
 
 sync_once() {
     validate_config
+    log "xui-sync $XUI_SYNC_VERSION"
 
     local sources_url push_url sources_json ok_count fail_count
     detect_rest_style || true
@@ -170,23 +220,32 @@ sync_once() {
         return 1
     fi
 
+    # Temp dir for JSON + subscription bodies. Never pass large data on argv.
+    local tmp_dir tmp_sources
+    tmp_dir="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/xui-sync.$$")"
+    mkdir -p "$tmp_dir" 2>/dev/null
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmp_dir'" RETURN
+    tmp_sources="$tmp_dir/sources.json"
+    printf '%s' "$sources_json" >"$tmp_sources"
+
     # If the response is not valid JSON, the URL is wrong or WP returned HTML.
-    if ! echo "$sources_json" | jq -e . >/dev/null 2>&1; then
+    if ! jq -e . "$tmp_sources" >/dev/null 2>&1; then
         local preview
-        preview="$(echo "$sources_json" | tr '\n' ' ' | cut -c1-160)"
+        preview="$(tr '\n' ' ' <"$tmp_sources" | cut -c1-160)"
         log "[ERROR] Host did not return JSON (HTTP=$http_code). URL: $sources_url"
         log "        Response starts with: $preview"
         log "        Check SITE_URL is correct and the xui-vpn-manager plugin is active."
         return 1
     fi
 
-    if [ "$(echo "$sources_json" | jq -r '.success // false')" != "true" ]; then
-        log "[ERROR] Host rejected request (HTTP=$http_code): $(echo "$sources_json" | jq -r '.msg // "unknown error"')"
+    if [ "$(jq -r '.success // false' "$tmp_sources")" != "true" ]; then
+        log "[ERROR] Host rejected request (HTTP=$http_code): $(jq -r '.msg // "unknown error"' "$tmp_sources")"
         return 1
     fi
 
     local count
-    count="$(echo "$sources_json" | jq '.sources | length')"
+    count="$(jq '.sources | length' "$tmp_sources")"
     if [ "$count" -eq 0 ]; then
         log "No active mobile sources configured on host. Nothing to do."
         return 0
@@ -196,11 +255,16 @@ sync_once() {
     ok_count=0
     fail_count=0
 
-    local i id name sub_url body push_resp p_ok p_msg
+    local i id name sub_url pool push_resp p_ok p_msg
+    local tmp_body tmp_push_resp
+    tmp_body="$tmp_dir/body"
+    tmp_push_resp="$tmp_dir/push_resp.json"
+
     for i in $(seq 0 $((count - 1))); do
-        id="$(echo "$sources_json"   | jq -r ".sources[$i].id")"
-        name="$(echo "$sources_json" | jq -r ".sources[$i].name")"
-        sub_url="$(echo "$sources_json" | jq -r ".sources[$i].sub_url")"
+        id="$(jq -r ".sources[$i].id" "$tmp_sources")"
+        name="$(jq -r ".sources[$i].name" "$tmp_sources")"
+        sub_url="$(jq -r ".sources[$i].sub_url" "$tmp_sources")"
+        pool="$(jq -r ".sources[$i].pool // \"outbound\"" "$tmp_sources")"
 
         if [ -z "$sub_url" ] || [ "$sub_url" = "null" ]; then
             log "  #$id $name: sub_url is empty — skipped."
@@ -209,36 +273,36 @@ sync_once() {
         fi
 
         log "  #$id $name: fetching subscription…"
-        body="$(sub_curl \
-            -H "User-Agent: $SUB_USER_AGENT" \
-            -H "Accept: */*" \
-            "$sub_url")"
-
-        if [ -z "$body" ]; then
-            log "  #$id $name: FAILED — empty subscription body (proxy/VPN issue?)."
+        if ! fetch_sub_to_file "$tmp_body" "$sub_url" "#$id $name"; then
+            log "  #$id $name: FAILED — empty subscription body after $FETCH_RETRIES attempt(s) (DNS/proxy/VPN?)."
             fail_count=$((fail_count + 1))
             continue
         fi
 
-        # Let the server parse the raw body (it handles base64 + protocol filtering).
-        local payload
-        payload="$(jq -n --argjson sid "$id" --arg body "$body" \
-            '{source_id: $sid, body: $body}')"
+        # Push: source_id + pool in query string, raw sub body as POST data.
+        # Avoids jq entirely — large subs hit ARG_MAX if embedded in JSON.
+        local push_target
+        if [[ "$push_url" == *'?'* ]]; then
+            push_target="${push_url}&source_id=${id}&pool=${pool}"
+        else
+            push_target="${push_url}?source_id=${id}&pool=${pool}"
+        fi
 
         push_resp="$(api_curl \
             -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
-            -H "Content-Type: application/json" \
+            -H "Content-Type: text/plain; charset=utf-8" \
             -H "Accept: application/json" \
-            --data-binary "$payload" \
-            "$push_url")"
+            --data-binary @"$tmp_body" \
+            "$push_target")"
+        printf '%s' "$push_resp" >"$tmp_push_resp"
 
-        p_ok="$(echo "$push_resp" | jq -r '.success // false' 2>/dev/null)"
-        p_msg="$(echo "$push_resp" | jq -r '.msg // ""' 2>/dev/null)"
+        p_ok="$(jq -r '.success // false' "$tmp_push_resp" 2>/dev/null)"
+        p_msg="$(jq -r '.msg // ""' "$tmp_push_resp" 2>/dev/null)"
 
         if [ "$p_ok" = "true" ]; then
             local added skipped
-            added="$(echo "$push_resp" | jq -r '.added // 0')"
-            skipped="$(echo "$push_resp" | jq -r '.skipped // 0')"
+            added="$(jq -r '.added // 0' "$tmp_push_resp")"
+            skipped="$(jq -r '.skipped // 0' "$tmp_push_resp")"
             log "  #$id $name: OK — added $added, skipped $skipped. $p_msg"
             ok_count=$((ok_count + 1))
         else

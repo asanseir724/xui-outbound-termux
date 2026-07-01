@@ -197,6 +197,14 @@ $logPath = str_replace('$HOME', getenv('HOME') ?: '/root', $logPath);
 $logTxt = tail_file($logPath);
 $configExists = is_file($CONFIG_FILE);
 
+$syncVersion = '';
+if (is_readable($SYNC_SCRIPT)) {
+    $head = (string) file_get_contents($SYNC_SCRIPT, false, null, 0, 4096);
+    if (preg_match('/^XUI_SYNC_VERSION="([^"]+)"/m', $head, $m)) {
+        $syncVersion = $m[1];
+    }
+}
+
 $panelPort = (int) ($_SERVER['SERVER_PORT'] ?? 8088);
 $panelLocal = 'http://localhost:' . $panelPort;
 $panelLan = '';
@@ -266,6 +274,11 @@ function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
         <span class="badge on">ذخیره‌شده</span>
       <?php else: ?>
         <span class="badge off">ذخیره نشده — فرم زیر را پر کنید</span>
+      <?php endif; ?>
+      <?php if ($syncVersion !== ''): ?>
+        <span class="badge on" style="margin-right:6px;">نسخه sync: <?= h($syncVersion) ?></span>
+      <?php elseif (is_readable($SYNC_SCRIPT)): ?>
+        <span class="badge off" style="margin-right:6px;">نسخه sync: قدیمی — update-vps.sh را اجرا کنید</span>
       <?php endif; ?>
     </div>
   </div>
