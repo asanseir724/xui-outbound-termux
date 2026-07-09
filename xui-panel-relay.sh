@@ -65,15 +65,35 @@ rest_url() {
     fi
 }
 
+# Must match xui-sync.sh: HTTP 200 alone is not enough (some hosts return HTML on /wp-json/).
 detect_rest_style() {
-    local code
-    code="$(api_curl -o /dev/null -w '%{http_code}' \
-        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
-        "${SITE_URL%/}/wp-json/xui/v1/outbound-mobile/panel-jobs" 2>/dev/null)"
-    if [ "$code" = "200" ] || [ "$code" = "403" ]; then
-        REST_STYLE="pretty"
+    local code tmp
+    if [ "${REST_FORCE_QUERY:-}" = "1" ]; then
+        REST_STYLE="query"
         return 0
     fi
+    tmp="$(mktemp 2>/dev/null || echo "/tmp/xui-relay-rest.$$")"
+    code="$(api_curl -o "$tmp" -w '%{http_code}' \
+        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+        -H "Accept: application/json" \
+        "${SITE_URL%/}/wp-json/xui/v1/outbound-mobile/panel-jobs?limit=1" 2>/dev/null)"
+    if [ "$code" = "200" ] && jq -e '.success' "$tmp" >/dev/null 2>&1; then
+        REST_STYLE="pretty"
+        rm -f "$tmp"
+        return 0
+    fi
+    rm -f "$tmp"
+    code="$(api_curl -o "$tmp" -w '%{http_code}' \
+        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+        -H "Accept: application/json" \
+        "${SITE_URL%/}/?rest_route=/xui/v1/outbound-mobile/panel-jobs&limit=1" 2>/dev/null)"
+    if [ "$code" = "200" ] && jq -e '.success' "$tmp" >/dev/null 2>&1; then
+        REST_STYLE="query"
+        rm -f "$tmp"
+        log "Note: pretty permalinks unavailable, using ?rest_route= fallback."
+        return 0
+    fi
+    rm -f "$tmp"
     REST_STYLE="query"
     return 0
 }

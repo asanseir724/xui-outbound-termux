@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v2"
+PANEL_RELAY_VERSION="20260709-v3"
 
 process_panel_jobs_once() {
     validate_config 2>/dev/null || return 0
@@ -32,17 +32,20 @@ process_panel_jobs_once() {
     jobs_json="${jobs_json%$'\n'*}"
 
     if [ -z "$jobs_json" ]; then
+        log "[WARN] panel-jobs: empty response (HTTP=${http_code:-?}) from $jobs_url — check SITE_URL / DNS"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi
 
     printf '%s' "$jobs_json" >"$tmp_jobs"
     if ! jq -e . "$tmp_jobs" >/dev/null 2>&1; then
+        log "[WARN] panel-jobs: not JSON (HTTP=$http_code) — try REST_FORCE_QUERY=1 in config.sh"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi
 
     if [ "$(jq -r '.success // false' "$tmp_jobs")" != "true" ]; then
+        log "[WARN] panel-jobs: host rejected request (HTTP=$http_code): $(jq -r '.msg // "unknown"' "$tmp_jobs" 2>/dev/null)"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi
