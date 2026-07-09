@@ -46,9 +46,9 @@ if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y
     apt-get install -y curl jq git unzip php-cli php-curl
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y curl jq git unzip php-cli
+    dnf install -y curl jq git unzip php-cli php-curl
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y curl jq git unzip php-cli
+    yum install -y curl jq git unzip php-cli php-curl
 else
     echo "[ERROR] No supported package manager (apt/dnf/yum) found." >&2
     exit 1
@@ -152,7 +152,29 @@ WantedBy=timers.target
 UNIT
 
 # ---------------------------------------------------------------------------
-# 5. systemd: always-on web panel
+# 5b. systemd: fast panel API relay loop (foreign X-UI panels)
+# ---------------------------------------------------------------------------
+cat > /etc/systemd/system/xui-panel-relay.service <<UNIT
+[Unit]
+Description=XUI panel API relay (foreign panels → WordPress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=XUI_STATE_DIR=$STATE_DIR
+Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
+ExecStart=/usr/bin/env bash $INSTALL_DIR/xui-panel-relay.sh loop
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# ---------------------------------------------------------------------------
+# 6. systemd: always-on web panel
 # ---------------------------------------------------------------------------
 cat > /etc/systemd/system/xui-panel.service <<UNIT
 [Unit]
@@ -177,6 +199,7 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now xui-sync.timer
+systemctl enable --now xui-panel-relay.service
 systemctl enable --now xui-panel.service
 
 # ---------------------------------------------------------------------------
@@ -213,6 +236,7 @@ echo "  در پنل: آدرس سایت وردپرس و توکن را وارد و
 echo ""
 echo "  دستورات مفید:"
 echo "    systemctl status xui-panel        وضعیت پنل"
+echo "    systemctl status xui-panel-relay  وضعیت relay پنل خارجی"
 echo "    systemctl status xui-sync.timer   وضعیت زمان‌بندی"
 echo "    systemctl start  xui-sync         اجرای دستی همگام‌سازی"
 echo "    journalctl -u xui-sync -n 50      لاگ همگام‌سازی"

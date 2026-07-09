@@ -40,7 +40,7 @@ if [ -z "$src" ]; then
 fi
 
 echo "==> Updating scripts in $INSTALL_DIR (config untouched)…"
-for f in xui-sync.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
+for f in xui-sync.sh xui-panel-relay.sh panel-relay-lib.sh panel-relay-exec.php xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
     if [ -f "$src/$f" ]; then
         cp -f "$src/$f" "$INSTALL_DIR/$f"
     fi
@@ -59,6 +59,18 @@ if command -v sed >/dev/null 2>&1; then
 fi
 chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
 
+# Ensure php-curl is present (required by panel-relay-exec.php).
+if ! php -m 2>/dev/null | grep -qi '^curl$'; then
+    echo "==> Installing php-curl…"
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y php-curl
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y php-curl
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y php-curl
+    fi
+fi
+
 # Keep config symlink intact.
 if [ -f "$STATE_DIR/config.sh" ] && [ ! -L "$INSTALL_DIR/config.sh" ]; then
     ln -sf "$STATE_DIR/config.sh" "$INSTALL_DIR/config.sh"
@@ -70,6 +82,31 @@ if grep -q '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" 2>/dev/null; then
 fi
 
 systemctl daemon-reload 2>/dev/null || true
+
+# Install panel-relay service if missing (upgrade from older installs)
+if [ -f "$INSTALL_DIR/xui-panel-relay.sh" ] && [ ! -f /etc/systemd/system/xui-panel-relay.service ]; then
+    cat > /etc/systemd/system/xui-panel-relay.service <<UNIT
+[Unit]
+Description=XUI panel API relay (foreign panels → WordPress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=XUI_STATE_DIR=$STATE_DIR
+Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
+ExecStart=/usr/bin/env bash $INSTALL_DIR/xui-panel-relay.sh loop
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+fi
+
+systemctl enable xui-panel-relay.service 2>/dev/null || true
+systemctl restart xui-panel-relay.service 2>/dev/null || true
 systemctl restart xui-panel.service 2>/dev/null || true
 
 echo ""

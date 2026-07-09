@@ -10,12 +10,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 STATE_DIR="${STATE_DIR:-$HOME/.config/xui-sync}"
 PANEL_PORT="${PANEL_PORT:-8088}"
 PANEL_PID="$STATE_DIR/panel.pid"
+RELAY_PID="$STATE_DIR/panel-relay.pid"
 PANEL_LOG="$STATE_DIR/panel.log"
+RELAY_LOG="$STATE_DIR/panel-relay.log"
 
 mkdir -p "$STATE_DIR"
 
 panel_running() {
     [ -f "$PANEL_PID" ] && kill -0 "$(cat "$PANEL_PID")" 2>/dev/null
+}
+
+relay_running() {
+    [ -f "$RELAY_PID" ] && kill -0 "$(cat "$RELAY_PID")" 2>/dev/null
 }
 
 crond_running() {
@@ -62,6 +68,25 @@ stop_panel() {
     rm -f "$PANEL_PID"
 }
 
+start_relay() {
+    if relay_running; then
+        return 0
+    fi
+    if [ ! -f "$SCRIPT_DIR/xui-panel-relay.sh" ]; then
+        return 0
+    fi
+    nohup bash "$SCRIPT_DIR/xui-panel-relay.sh" loop >>"$RELAY_LOG" 2>&1 &
+    echo $! >"$RELAY_PID"
+    sleep 1
+}
+
+stop_relay() {
+    if relay_running; then
+        kill "$(cat "$RELAY_PID")" 2>/dev/null || true
+    fi
+    rm -f "$RELAY_PID"
+}
+
 status_services() {
     if crond_running; then
         echo "crond: running"
@@ -73,24 +98,33 @@ status_services() {
     else
         echo "panel: stopped"
     fi
+    if relay_running; then
+        echo "panel-relay: running"
+    else
+        echo "panel-relay: stopped"
+    fi
 }
 
 case "${1:-start}" in
     start)
         start_crond
         start_panel
+        start_relay
         termux-wake-lock 2>/dev/null || true
         ;;
     stop)
+        stop_relay
         stop_panel
         stop_crond
         termux-wake-unlock 2>/dev/null || true
         ;;
     restart)
+        stop_relay
         stop_panel
         stop_crond
         start_crond
         start_panel
+        start_relay
         termux-wake-lock 2>/dev/null || true
         ;;
     status)

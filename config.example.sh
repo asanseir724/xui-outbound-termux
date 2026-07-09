@@ -31,5 +31,13 @@ PROXY_URL=""
 # حداکثر زمان دریافت هر ساب (ثانیه)
 FETCH_TIMEOUT=45
 
+# تعداد تلاش مجدد وقتی دریافت ساب خالی شد یا DNS/شبکه قطع بود
+FETCH_RETRIES=3
+# فاصله بین هر تلاش (ثانیه)
+FETCH_RETRY_DELAY=15
+
+# فاصله بین هر poll برای jobهای API پنل خارجی (ثانیه) — سرویس xui-panel-relay
+RELAY_INTERVAL_SEC=4
+
 # مسیر فایل لاگ
 LOG_FILE="$HOME/.config/xui-sync/sync.log"

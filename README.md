@@ -17,6 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 این دستور:
 - پیش‌نیازها (`php`, `jq`, `curl`, `git`) را نصب می‌کند
 - همگام‌سازی **ساعتی** را با systemd timer تنظیم می‌کند
+- **relay پنل خارجی** را هر چند ثانیه اجرا می‌کند (`xui-panel-relay`) — برای ساخت/مدیریت اشتراک روی پنل X-UI خارج
 - **پنل وب** را به‌صورت سرویس دائمی (systemd) بالا می‌آورد
 - پورت فایروال را باز می‌کند
 - یک **رمز ورود** برای پنل می‌سازد و در پایان آدرس و رمز را چاپ می‌کند
@@ -39,6 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 | کار | دستور |
 |---|---|
 | وضعیت پنل | `systemctl status xui-panel` |
+| وضعیت relay پنل خارجی | `systemctl status xui-panel-relay` |
 | وضعیت زمان‌بندی | `systemctl status xui-sync.timer` |
 | اجرای دستی همگام‌سازی | `systemctl start xui-sync` |
 | لاگ همگام‌سازی | `journalctl -u xui-sync -n 50` |
@@ -67,6 +69,26 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 | **فقط پراکسی** (Proxy only) | در `config.sh` مقدار `PROXY_URL` را به پراکسی محلی هیدیفای بدهید، مثلاً `socks5h://127.0.0.1:2334`. |
 
 دریافت ساب از تونل رد می‌شود (که خوب است، سانسور را رد می‌کند) و ارسال به سایت هم بدون مشکل انجام می‌شود.
+
+---
+
+## پنل X-UI خارجی (Panel Relay)
+
+علاوه بر همگام‌سازی ساب → اوتباند، همان VPS می‌تواند **API پنل‌های X-UI خارج** را هم اجرا کند (ساخت کلاینت، sync حجم، حذف و …) چون هاست ایران مستقیم به آن پنل‌ها دسترسی ندارد.
+
+### تنظیم در وردپرس
+
+1. **مدیریت → Panel Management** — پنل خارج را اضافه کنید.
+2. فیلد **«دسترسی از هاست»** را روی **از طریق واسط (VPS/اندروید)** بگذارید.
+3. پلن/نماینده مثل قبل کار می‌کند.
+
+### روی VPS
+
+سرویس `xui-panel-relay` هر چند ثانیه jobهای API را از وردپرس می‌گیرد و روی پنل خارج اجرا می‌کند. با نصب جدید خودکار فعال است؛ برای به‌روزرسانی:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
+```
 
 ---
 
@@ -170,11 +192,16 @@ tail -f ~/.config/xui-sync/sync.log
 
 ## API مورد استفاده (سمت وردپرس)
 
-- `GET  /wp-json/xui/v1/outbound-mobile/sources`
-- `POST /wp-json/xui/v1/outbound-mobile/push` — بدنه: `{ "source_id": 1, "body": "<raw sub body>" }`
+- `GET  /wp-json/xui/v1/outbound-mobile/sources` — شامل منابع **Outbound** و **استخر کانفیگ رایگان** (`pool: outbound` | `free_config`)
+- `POST /wp-json/xui/v1/outbound-mobile/push` — یکی از این روش‌ها:
+  - **پیشنهادی (ساب بزرگ):** `?source_id=1&pool=outbound` در URL + بدنه خام ساب به‌صورت `text/plain`
+  - **JSON کوچک:** `{ "source_id": 1, "pool": "free_config", "body": "<raw sub body>" }`
+  - برای استخر رایگان: `pool=free_config`
 - هدر احراز هویت: `X-XUI-Mobile-Token: YOUR_TOKEN`
 
-سرور خودش بدنه‌ی ساب (base64 یا متن) را پارس می‌کند و لینک‌های `vless/vmess/trojan/ss` را به اوتباند تبدیل و در بالانسر ثبت می‌کند.
+سرور خودش بدنه‌ی ساب (base64 یا متن) را پارس می‌کند:
+- `pool=outbound` → لینک‌ها به اوتباند پنل ثنایی می‌روند
+- `pool=free_config` → لینک‌ها در استخر کانفیگ رایگان ثبت و تست می‌شوند
 
 ---
 

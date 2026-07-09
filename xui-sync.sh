@@ -16,7 +16,7 @@
 set -u
 
 # Bump when push/sync behaviour changes (shown in panel + first log line).
-XUI_SYNC_VERSION="20260701-rawbody"
+XUI_SYNC_VERSION="20260701-panelrelay"
 
 # systemd / PHP shell_exec often run without HOME — set a safe default first.
 export HOME="${HOME:-/root}"
@@ -312,6 +312,14 @@ sync_once() {
     done
 
     log "Cycle done. success=$ok_count fail=$fail_count"
+
+    # پنل‌های خارجی (relay): پردازش jobهای API در همان چرخه (علاوه بر سرویس relay دائمی)
+    if [ -f "$SCRIPT_DIR/panel-relay-lib.sh" ]; then
+        # shellcheck source=panel-relay-lib.sh
+        . "$SCRIPT_DIR/panel-relay-lib.sh"
+        process_panel_jobs_once || true
+    fi
+
     [ "$fail_count" -eq 0 ]
 }
 
