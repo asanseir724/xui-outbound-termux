@@ -5,7 +5,18 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v5"
+PANEL_RELAY_VERSION="20260709-v6"
+
+# True when a dedicated relay loop is already running (avoid duplicate workers).
+should_skip_sync_relay() {
+    if [ "${XUI_SYNC_SKIP_RELAY:-}" = "1" ]; then
+        return 0
+    fi
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet xui-panel-relay 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
 
 # Append query params without breaking ?rest_route= URLs (use & not a second ?).
 append_url_param() {
@@ -23,6 +34,18 @@ process_panel_jobs_once() {
 
     if [ -z "${SITE_URL:-}" ] || [ -z "${MOBILE_TOKEN:-}" ]; then
         return 0
+    fi
+
+    local lock_dir lock_file
+    lock_dir="${XUI_STATE_DIR:-${STATE_DIR:-/etc/xui-outbound}}"
+    mkdir -p "$lock_dir" 2>/dev/null
+    lock_file="$lock_dir/panel-relay.lock"
+    exec 9>"$lock_file"
+    if command -v flock >/dev/null 2>&1; then
+        if ! flock -n 9; then
+            log "Panel relay: skipped (another worker holds lock)"
+            return 0
+        fi
     fi
 
     local jobs_url result_url tmp_dir tmp_jobs http_code jobs_json relay_count

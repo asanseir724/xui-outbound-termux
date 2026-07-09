@@ -313,11 +313,15 @@ sync_once() {
 
     log "Cycle done. success=$ok_count fail=$fail_count"
 
-    # پنل‌های خارجی (relay): پردازش jobهای API در همان چرخه (علاوه بر سرویس relay دائمی)
+    # Relay jobs: only when no dedicated xui-panel-relay service (avoid double-claim).
     if [ -f "$SCRIPT_DIR/panel-relay-lib.sh" ]; then
         # shellcheck source=panel-relay-lib.sh
         . "$SCRIPT_DIR/panel-relay-lib.sh"
-        process_panel_jobs_once || true
+        if should_skip_sync_relay 2>/dev/null; then
+            log "Panel relay: skipped (xui-panel-relay service is active)"
+        else
+            process_panel_jobs_once || true
+        fi
     fi
 
     [ "$fail_count" -eq 0 ]
