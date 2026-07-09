@@ -195,6 +195,13 @@ if (!$login['ok']) {
     exit(1);
 }
 
+// Job endpoint is login only — relay_login above is enough (avoid second POST → HTTP 404).
+$ep_norm = rtrim(strtolower($endpoint), '/');
+if ($ep_norm === '/login' || str_ends_with($ep_norm, '/login')) {
+    echo json_encode(['ok' => true, 'result' => ['success' => true, 'msg' => 'login ok']], JSON_UNESCAPED_UNICODE);
+    exit(0);
+}
+
 if (!is_array($payload)) {
     $payload = [];
 }

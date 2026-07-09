@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v9"
+PANEL_RELAY_VERSION="20260709-v10"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
