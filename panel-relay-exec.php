@@ -156,7 +156,13 @@ function relay_request(
         }
     }
 
-    $res = relay_http($url, $method, $body, $headers, 180);
+    $timeout = 180;
+    $ep      = strtolower($endpoint);
+    if (str_contains($ep, '/inbounds/update/') || str_contains($ep, 'addclient')) {
+        $timeout = 300;
+    }
+
+    $res = relay_http($url, $method, $body, $headers, $timeout);
     if (!empty($res['error'])) {
         return ['ok' => false, 'result' => null, 'error' => $res['error']];
     }
