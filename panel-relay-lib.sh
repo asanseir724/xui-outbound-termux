@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v4"
+PANEL_RELAY_VERSION="20260709-v5"
 
 # Append query params without breaking ?rest_route= URLs (use & not a second ?).
 append_url_param() {
@@ -46,20 +46,20 @@ process_panel_jobs_once() {
     jobs_json="${jobs_json%$'\n'*}"
 
     if [ -z "$jobs_json" ]; then
-        log "[WARN] panel-jobs: empty response (HTTP=${http_code:-?}) from $jobs_url — check SITE_URL / DNS"
+        log "[WARN] panel-jobs: empty response (HTTP=${http_code:-?}) URL=$jobs_target"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi
 
     printf '%s' "$jobs_json" >"$tmp_jobs"
     if ! jq -e . "$tmp_jobs" >/dev/null 2>&1; then
-        log "[WARN] panel-jobs: not JSON (HTTP=$http_code) — try REST_FORCE_QUERY=1 in config.sh"
+        log "[WARN] panel-jobs: not JSON (HTTP=$http_code) URL=$jobs_target"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi
 
     if [ "$(jq -r '.success // false' "$tmp_jobs")" != "true" ]; then
-        log "[WARN] panel-jobs: host rejected request (HTTP=$http_code): $(jq -r '.msg // "unknown"' "$tmp_jobs" 2>/dev/null)"
+        log "[WARN] panel-jobs: host rejected (HTTP=$http_code) URL=$jobs_target msg=$(jq -r '.msg // "unknown"' "$tmp_jobs" 2>/dev/null)"
         rm -rf "$tmp_dir" 2>/dev/null
         return 0
     fi

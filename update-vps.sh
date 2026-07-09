@@ -77,8 +77,12 @@ if [ -f "$STATE_DIR/config.sh" ] && [ ! -L "$INSTALL_DIR/config.sh" ]; then
 fi
 
 ver=""
+relay_ver=""
 if grep -q '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" 2>/dev/null; then
     ver="$(grep '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" | head -n1 | cut -d'"' -f2)"
+fi
+if grep -q '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" 2>/dev/null; then
+    relay_ver="$(grep '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
 fi
 
 systemctl daemon-reload 2>/dev/null || true
@@ -114,6 +118,9 @@ echo "=================================================="
 echo "  ✓ به‌روزرسانی انجام شد"
 if [ -n "$ver" ]; then
     echo "  نسخه xui-sync: $ver"
+fi
+if [ -n "$relay_ver" ]; then
+    echo "  نسخه panel-relay: $relay_ver"
 fi
 echo "  پنل را باز کنید و «اجرای همگام‌سازی الان» را بزنید."
 echo "  باید در لاگ ببینید: xui-sync $ver"

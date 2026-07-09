@@ -59,7 +59,7 @@ REST_STYLE=""
 rest_url() {
     local route="$1"
     if [ "$REST_STYLE" = "query" ]; then
-        echo "${SITE_URL%/}/?rest_route=/$route"
+        echo "${SITE_URL%/}/index.php?rest_route=/$route"
     else
         echo "${SITE_URL%/}/wp-json/$route"
     fi
@@ -68,6 +68,9 @@ rest_url() {
 # Must match xui-sync.sh: HTTP 200 alone is not enough (some hosts return HTML on /wp-json/).
 detect_rest_style() {
     local code tmp
+    if [ -n "${REST_STYLE:-}" ]; then
+        return 0
+    fi
     if [ "${REST_FORCE_QUERY:-}" = "1" ]; then
         REST_STYLE="query"
         return 0
@@ -83,17 +86,21 @@ detect_rest_style() {
         return 0
     fi
     rm -f "$tmp"
-    code="$(api_curl -o "$tmp" -w '%{http_code}' \
-        -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
-        -H "Accept: application/json" \
-        "${SITE_URL%/}/?rest_route=/xui/v1/outbound-mobile/panel-jobs&limit=1" 2>/dev/null)"
-    if [ "$code" = "200" ] && jq -e '.success' "$tmp" >/dev/null 2>&1; then
-        REST_STYLE="query"
+    for query_base in \
+        "${SITE_URL%/}/index.php?rest_route=/xui/v1/outbound-mobile/panel-jobs" \
+        "${SITE_URL%/}/?rest_route=/xui/v1/outbound-mobile/panel-jobs"; do
+        code="$(api_curl -o "$tmp" -w '%{http_code}' \
+            -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+            -H "Accept: application/json" \
+            "${query_base}&limit=1" 2>/dev/null)"
+        if [ "$code" = "200" ] && jq -e '.success' "$tmp" >/dev/null 2>&1; then
+            REST_STYLE="query"
+            rm -f "$tmp"
+            log "Note: using index.php?rest_route= for WordPress REST."
+            return 0
+        fi
         rm -f "$tmp"
-        log "Note: pretty permalinks unavailable, using ?rest_route= fallback."
-        return 0
-    fi
-    rm -f "$tmp"
+    done
     REST_STYLE="query"
     return 0
 }
