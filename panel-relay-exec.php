@@ -172,6 +172,17 @@ function relay_request(
 
     $decoded = json_decode($res['body'], true);
     if (!is_array($decoded)) {
+        // /sub/{id} returns plain base64 text — not JSON.
+        if ($res['code'] === 200 && $res['body'] !== '' && stripos($endpoint, '/sub/') !== false) {
+            return [
+                'ok'     => true,
+                'result' => [
+                    'success'  => true,
+                    'raw_body' => $res['body'],
+                ],
+                'error'  => '',
+            ];
+        }
         // Raw SQLite backup (e.g. /server/getDb) is not JSON — relay as base64.
         if ($res['code'] === 200 && strlen($res['body']) > 500) {
             return [
