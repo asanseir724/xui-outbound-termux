@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v10"
+PANEL_RELAY_VERSION="20260709-v11"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -133,7 +133,7 @@ process_panel_jobs_once() {
                       {success: ($r.success // true), msg: ($r.msg // "ok")}
                     end
                 ' 2>/dev/null)"
-                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"ok"}'
+                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback"}'
             fi
             submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
                 '{job_id: $job_id, success: true, result: $result}')"

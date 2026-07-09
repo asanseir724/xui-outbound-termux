@@ -189,6 +189,37 @@ function relay_request(
     return ['ok' => true, 'result' => $decoded, 'error' => ''];
 }
 
+/**
+ * Strip client lists from huge inbounds/list payloads before JSON encode.
+ *
+ * @param array<string,mixed> $result
+ * @return array<string,mixed>
+ */
+function trim_inbounds_list_result(array $result): array
+{
+    if (empty($result['obj']) || !is_array($result['obj'])) {
+        return $result;
+    }
+
+    foreach ($result['obj'] as $idx => $ib) {
+        if (!is_array($ib)) {
+            continue;
+        }
+        if (isset($ib['settings']) && is_string($ib['settings'])) {
+            $settings = json_decode($ib['settings'], true);
+            if (is_array($settings)) {
+                unset($settings['clients']);
+                $ib['settings'] = json_encode($settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        } elseif (isset($ib['settings']) && is_array($ib['settings'])) {
+            unset($ib['settings']['clients']);
+        }
+        $result['obj'][$idx] = $ib;
+    }
+
+    return $result;
+}
+
 $login = relay_login($panel_url, $user, $pass);
 if (!$login['ok']) {
     echo json_encode(['ok' => false, 'error' => $login['error']], JSON_UNESCAPED_UNICODE);
@@ -220,4 +251,9 @@ if (!$req['ok']) {
     exit(1);
 }
 
-echo json_encode(['ok' => true, 'result' => $req['result']], JSON_UNESCAPED_UNICODE);
+$result = $req['result'];
+if (is_array($result) && stripos($endpoint, 'inbounds/list') !== false) {
+    $result = trim_inbounds_list_result($result);
+}
+
+echo json_encode(['ok' => true, 'result' => $result], JSON_UNESCAPED_UNICODE);
