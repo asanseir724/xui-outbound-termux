@@ -156,7 +156,7 @@ function relay_request(
         }
     }
 
-    $res = relay_http($url, $method, $body, $headers, 120);
+    $res = relay_http($url, $method, $body, $headers, 180);
     if (!empty($res['error'])) {
         return ['ok' => false, 'result' => null, 'error' => $res['error']];
     }
