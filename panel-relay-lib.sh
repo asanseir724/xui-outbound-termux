@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v6"
+PANEL_RELAY_VERSION="20260709-v7"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -115,7 +115,12 @@ process_panel_jobs_once() {
         exec_out="$(printf '%s' "$job_json" | php "$php_exec" 2>&1)" || true
         ok="$(printf '%s' "$exec_out" | jq -r '.ok // false' 2>/dev/null)"
         if [ "$ok" = "true" ]; then
-            result_json="$(printf '%s' "$exec_out" | jq -c '.result')"
+            result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
+            # Huge inbound/xray payloads break ?rest_route= POST on some hosts — keep success only.
+            if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
+                result_json="$(printf '%s' "$exec_out" | jq -c '.result | {success: (.success // true), msg: (.msg // "ok")}' 2>/dev/null)"
+                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"ok"}'
+            fi
             submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
                 '{job_id: $job_id, success: true, result: $result}')"
             log "  job #$jid ($pname): OK"
@@ -133,7 +138,7 @@ process_panel_jobs_once() {
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d "$submit_body" \
-            "$result_url")"
+            "$(append_url_param "$result_url" "job_id=${jid}")")"
         if [ "$(printf '%s' "$submit_resp" | jq -r '.success // false' 2>/dev/null)" != "true" ]; then
             log "  job #$jid: host rejected result — ${submit_resp:0:120}"
         fi
