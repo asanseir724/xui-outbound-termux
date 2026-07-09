@@ -118,7 +118,21 @@ process_panel_jobs_once() {
             result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
             # Huge inbound/xray payloads break ?rest_route= POST on some hosts — keep success only.
             if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
-                result_json="$(printf '%s' "$exec_out" | jq -c '.result | {success: (.success // true), msg: (.msg // "ok")}' 2>/dev/null)"
+                result_json="$(printf '%s' "$exec_out" | jq -c '
+                    .result as $r |
+                    if ($r.obj | type) == "array" then
+                      {success: ($r.success // true), obj: [
+                        $r.obj[] |
+                        if (.settings | type) == "string" then
+                          .settings |= ((fromjson? // {}) | del(.clients) | tojson)
+                        elif (.settings | type) == "object" then
+                          .settings |= del(.clients)
+                        else . end
+                      ]}
+                    else
+                      {success: ($r.success // true), msg: ($r.msg // "ok")}
+                    end
+                ' 2>/dev/null)"
                 [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"ok"}'
             fi
             submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
