@@ -5,7 +5,18 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v3"
+PANEL_RELAY_VERSION="20260709-v4"
+
+# Append query params without breaking ?rest_route= URLs (use & not a second ?).
+append_url_param() {
+    local url="$1"
+    local param="$2"
+    if [[ "$url" == *'?'* ]]; then
+        echo "${url}&${param}"
+    else
+        echo "${url}?${param}"
+    fi
+}
 
 process_panel_jobs_once() {
     validate_config 2>/dev/null || return 0
@@ -23,11 +34,14 @@ process_panel_jobs_once() {
     mkdir -p "$tmp_dir" 2>/dev/null
     tmp_jobs="$tmp_dir/jobs.json"
 
+    local jobs_target
+    jobs_target="$(append_url_param "$jobs_url" "limit=15")"
+
     jobs_json="$(api_curl \
         -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
         -H "Accept: application/json" \
         -w $'\n%{http_code}' \
-        "$jobs_url?limit=15")"
+        "$jobs_target")"
     http_code="${jobs_json##*$'\n'}"
     jobs_json="${jobs_json%$'\n'*}"
 
