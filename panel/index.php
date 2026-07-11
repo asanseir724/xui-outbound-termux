@@ -325,6 +325,13 @@ if ($lanIp !== '') {
 }
 
 function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
+
+$FIELD_GROUPS = [
+    'اتصال وردپرس' => ['SITE_URL', 'MOBILE_TOKEN'],
+    'زمان‌بندی'     => ['INTERVAL_MIN', 'FETCH_TIMEOUT'],
+    'دریافت ساب'    => ['SUB_USER_AGENT', 'PROXY_URL'],
+];
+$FIELD_GRID = ['INTERVAL_MIN', 'FETCH_TIMEOUT'];
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -334,17 +341,16 @@ function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
 <title>XUI Outbound</title>
 <style>
   :root {
-    --bg: #f4f4f5;
-    --card: #ffffff;
-    --line: #e4e4e7;
-    --txt: #18181b;
-    --mut: #71717a;
+    --bg: #f8fafc;
+    --card: #fff;
+    --line: #e2e8f0;
+    --txt: #0f172a;
+    --mut: #64748b;
     --acc: #2563eb;
-    --ok: #16a34a;
-    --err: #dc2626;
-    --ok-bg: #f0fdf4;
+    --ok: #15803d;
+    --err: #b91c1c;
+    --ok-bg: #ecfdf5;
     --err-bg: #fef2f2;
-    --shadow: 0 1px 3px rgba(0,0,0,.04);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -352,236 +358,269 @@ function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
     background: var(--bg);
     color: var(--txt);
     line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
   }
-  .page { max-width: 640px; margin: 0 auto; padding: 32px 20px 48px; }
-  .top {
+  .shell { max-width: 560px; margin: 0 auto; padding: 24px 16px 40px; }
+
+  /* header */
+  .hdr {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 24px;
-  }
-  .top h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
-  .top p { font-size: 13px; color: var(--mut); margin-top: 4px; }
-  .link-muted { color: var(--mut); font-size: 13px; text-decoration: none; white-space: nowrap; }
-  .link-muted:hover { color: var(--acc); }
-  .notice {
-    padding: 12px 14px;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    font-size: 14px;
-    border: 1px solid var(--line);
-  }
-  .notice.ok { background: var(--ok-bg); border-color: #bbf7d0; color: #166534; }
-  .notice.err { background: var(--err-bg); border-color: #fecaca; color: #991b1b; }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 12px;
-    box-shadow: var(--shadow);
-  }
-  .card-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--mut);
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    margin-bottom: 14px;
-  }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .chip {
-    display: inline-flex;
     align-items: center;
-    font-size: 12px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    background: var(--bg);
-    color: var(--mut);
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line);
   }
-  .chip.ok { background: var(--ok-bg); border-color: #bbf7d0; color: #166534; }
-  .chip.err { background: var(--err-bg); border-color: #fecaca; color: #991b1b; }
-  .urls { direction: ltr; text-align: left; font-size: 13px; }
-  .urls a { color: var(--acc); text-decoration: none; }
-  .urls a:hover { text-decoration: underline; }
-  .urls div + div { margin-top: 6px; }
-  label {
-    display: block;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--txt);
-    margin: 14px 0 6px;
-  }
-  label:first-of-type { margin-top: 0; }
-  input[type=text], input[type=number], input[type=password] {
-    width: 100%;
+  .hdr h1 { font-size: 18px; font-weight: 600; }
+  .hdr-actions { display: flex; gap: 8px; align-items: center; }
+  .hdr-actions a { color: var(--mut); font-size: 13px; text-decoration: none; }
+  .hdr-actions a:hover { color: var(--acc); }
+
+  /* notice */
+  .notice {
     padding: 10px 12px;
     border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .notice.ok { background: var(--ok-bg); color: var(--ok); }
+  .notice.err { background: var(--err-bg); color: var(--err); }
+
+  /* status bar */
+  .status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .pill {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #fff;
     border: 1px solid var(--line);
+    color: var(--mut);
+  }
+  .pill.ok { background: var(--ok-bg); border-color: #a7f3d0; color: var(--ok); }
+  .pill.err { background: var(--err-bg); border-color: #fecaca; color: var(--err); }
+  .pill a { color: inherit; text-decoration: none; direction: ltr; unicode-bidi: embed; }
+
+  /* form sections */
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .section {
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .section:last-child { border-bottom: 0; }
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mut);
+    margin-bottom: 12px;
+  }
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--mut);
+    margin-bottom: 4px;
+  }
+  .field input {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-size: 14px;
+    font-family: inherit;
     background: #fff;
     color: var(--txt);
-    font-size: 14px;
-    transition: border-color .15s, box-shadow .15s;
   }
-  input:focus {
+  .field input:focus {
     outline: none;
     border-color: var(--acc);
-    box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    box-shadow: 0 0 0 2px rgba(37,99,235,.12);
   }
-  .hint { font-size: 12px; color: var(--mut); margin-top: 8px; line-height: 1.6; }
-  .actions { display: flex; gap: 8px; margin-top: 18px; }
-  button {
-    padding: 10px 18px;
-    border: 0;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: inherit;
-    transition: background .15s;
+  .field input.ltr { direction: ltr; text-align: left; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
   }
-  .btn-primary { background: var(--acc); color: #fff; flex: 1; }
-  .btn-primary:hover { background: #1d4ed8; }
-  .btn-secondary {
-    background: #fff;
-    color: var(--txt);
-    border: 1px solid var(--line);
-    flex: 1;
-  }
-  .btn-secondary:hover { background: var(--bg); }
-  pre {
-    background: #fafafa;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 14px;
-    overflow: auto;
-    max-height: 280px;
-    font-size: 11.5px;
-    line-height: 1.65;
-    direction: ltr;
-    text-align: left;
-    color: #3f3f46;
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    margin-top: 12px;
-  }
-  .log-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-  .log-head .card-title { margin-bottom: 0; }
-  .refresh { color: var(--acc); font-size: 13px; text-decoration: none; }
-  .refresh:hover { text-decoration: underline; }
-  .last-line {
-    direction: ltr;
-    text-align: left;
+  .hint {
     font-size: 11px;
     color: var(--mut);
     margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  /* action bar */
+  .bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #f1f5f9;
+    border-top: 1px solid var(--line);
+  }
+  button {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-save { background: var(--acc); color: #fff; }
+  .btn-save:hover { background: #1d4ed8; }
+  .btn-run {
+    background: #fff;
+    color: var(--txt);
+    border: 1px solid var(--line);
+  }
+  .btn-run:hover { background: var(--bg); }
+
+  /* log */
+  .log-panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .log-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+  .log-top span { font-size: 12px; font-weight: 600; color: var(--mut); }
+  .log-top a { font-size: 12px; color: var(--acc); text-decoration: none; }
+  .log-body { padding: 0; }
+  pre {
+    margin: 0;
+    padding: 14px 16px;
+    max-height: 320px;
+    overflow: auto;
+    font-size: 11px;
+    line-height: 1.7;
+    direction: ltr;
+    text-align: left;
+    color: #475569;
+    font-family: ui-monospace, Consolas, monospace;
+    background: #fafafa;
+    white-space: pre-wrap;
     word-break: break-all;
   }
-  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 520px) { .split { grid-template-columns: 1fr; } }
+  .output-panel { margin-top: 16px; }
+
+  @media (max-width: 480px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    .bar { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
-<div class="page">
+<div class="shell">
 
-  <header class="top">
-    <div>
-      <h1>XUI Outbound</h1>
-      <p>همگام‌سازی ساب با وردپرس</p>
+  <header class="hdr">
+    <h1>XUI Outbound</h1>
+    <div class="hdr-actions">
+      <?php if ($AUTH_REQUIRED): ?>
+        <a href="?logout=1">خروج</a>
+      <?php endif; ?>
     </div>
-    <?php if ($AUTH_REQUIRED): ?>
-      <a class="link-muted" href="?logout=1">خروج</a>
-    <?php endif; ?>
   </header>
 
   <?php if ($notice): ?>
     <div class="notice <?= $notice_type === 'err' ? 'err' : 'ok' ?>"><?= h($notice) ?></div>
   <?php endif; ?>
 
-  <section class="card">
-    <div class="card-title">وضعیت</div>
-    <div class="urls">
-      <div><span style="color:var(--mut)">local</span> · <a href="<?= h($panelLocal) ?>"><?= h($panelLocal) ?></a></div>
-      <?php if ($panelLan !== ''): ?>
-      <div><span style="color:var(--mut)">lan</span> · <a href="<?= h($panelLan) ?>"><?= h($panelLan) ?></a></div>
-      <?php endif; ?>
-    </div>
-    <div class="chips">
-      <?php if ($configExists): ?>
-        <span class="chip ok">کانفیگ ذخیره‌شده</span>
-      <?php else: ?>
-        <span class="chip err">کانفیگ تنظیم نشده</span>
-      <?php endif; ?>
-      <?php if ($syncVersion !== ''): ?>
-        <span class="chip">sync <?= h($syncVersion) ?></span>
-      <?php endif; ?>
-      <?php if ($relayStatus['state'] === 'running'): ?>
-        <span class="chip ok"><?= h($relayStatus['label']) ?></span>
-      <?php elseif ($relayStatus['state'] === 'stopped'): ?>
-        <span class="chip err"><?= h($relayStatus['label']) ?></span>
-      <?php endif; ?>
-      <?php if ($logHealth['state'] === 'ok'): ?>
-        <span class="chip ok"><?= h($logHealth['label']) ?></span>
-      <?php elseif ($logHealth['state'] === 'warn'): ?>
-        <span class="chip err"><?= h($logHealth['label']) ?></span>
-      <?php endif; ?>
-    </div>
-  </section>
+  <div class="status">
+    <?php if ($configExists): ?>
+      <span class="pill ok">کانفیگ ✓</span>
+    <?php else: ?>
+      <span class="pill err">بدون کانفیگ</span>
+    <?php endif; ?>
+    <?php if ($relayStatus['state'] === 'running'): ?>
+      <span class="pill ok"><?= h($relayStatus['label']) ?></span>
+    <?php elseif ($relayStatus['state'] === 'stopped'): ?>
+      <span class="pill err"><?= h($relayStatus['label']) ?></span>
+    <?php endif; ?>
+    <?php if ($logHealth['state'] === 'ok'): ?>
+      <span class="pill ok">لاگ سالم</span>
+    <?php elseif ($logHealth['state'] === 'warn'): ?>
+      <span class="pill err">خطا در لاگ</span>
+    <?php endif; ?>
+    <?php if ($syncVersion !== ''): ?>
+      <span class="pill"><?= h($syncVersion) ?></span>
+    <?php endif; ?>
+    <span class="pill"><a href="<?= h($panelLocal) ?>">local:<?= (int)$panelPort ?></a></span>
+    <?php if ($panelLan !== ''): ?>
+      <span class="pill"><a href="<?= h($panelLan) ?>"><?= h($lanIp) ?></a></span>
+    <?php endif; ?>
+  </div>
 
-  <form method="post" class="card">
-    <input type="hidden" name="action" value="save">
-    <div class="card-title">تنظیمات</div>
-    <?php foreach ($FIELDS as $key => $f): ?>
-      <label for="<?= h($key) ?>"><?= h($f['label']) ?></label>
-      <input
-        id="<?= h($key) ?>"
-        name="<?= h($key) ?>"
-        type="<?= h($f['type']) ?>"
-        value="<?= h($cfg[$key] ?? '') ?>"
-        placeholder="<?= h($f['placeholder']) ?>"
-        <?= $f['type'] === 'text' ? 'dir="ltr" style="text-align:left"' : '' ?>>
+  <form method="post" class="panel">
+    <?php foreach ($FIELD_GROUPS as $groupTitle => $keys): ?>
+      <div class="section">
+        <div class="section-title"><?= h($groupTitle) ?></div>
+        <?php
+        $gridOpen = false;
+        foreach ($keys as $key):
+            if (!isset($FIELDS[$key])) continue;
+            $f = $FIELDS[$key];
+            $inGrid = in_array($key, $FIELD_GRID, true);
+            if ($inGrid && !$gridOpen):
+                $gridOpen = true;
+        ?>
+        <div class="grid-2">
+        <?php elseif (!$inGrid && $gridOpen):
+                $gridOpen = false;
+        ?>
+        </div>
+        <?php endif; ?>
+          <div class="field">
+            <label for="<?= h($key) ?>"><?= h($f['label']) ?></label>
+            <input
+              id="<?= h($key) ?>"
+              name="<?= h($key) ?>"
+              type="<?= h($f['type']) ?>"
+              value="<?= h($cfg[$key] ?? '') ?>"
+              placeholder="<?= h($f['placeholder']) ?>"
+              class="<?= $f['type'] === 'text' ? 'ltr' : '' ?>">
+          </div>
+        <?php endforeach; ?>
+        <?php if ($gridOpen): ?></div><?php endif; ?>
+        <?php if ($groupTitle === 'دریافت ساب'): ?>
+          <p class="hint">حالت VPN: پراکسی خالی · حالت Proxy: socks5h://127.0.0.1:2334</p>
+        <?php endif; ?>
+      </div>
     <?php endforeach; ?>
-    <p class="hint">VPN (tun): پراکسی خالی · Proxy: socks5h://127.0.0.1:2334</p>
-    <div class="actions">
-      <button class="btn-primary" type="submit">ذخیره</button>
+
+    <div class="bar">
+      <button class="btn-save" type="submit" name="action" value="save">ذخیره تنظیمات</button>
+      <button class="btn-run" type="submit" name="action" value="run">همگام‌سازی</button>
     </div>
   </form>
 
-  <div class="split">
-    <form method="post" class="card" style="margin-bottom:0">
-      <input type="hidden" name="action" value="run">
-      <div class="card-title">همگام‌سازی</div>
-      <p class="hint">اجرای یک‌باره همین الان</p>
-      <div class="actions" style="margin-top:12px">
-        <button class="btn-secondary" type="submit">اجرا</button>
-      </div>
-    </form>
-
-    <section class="card" style="margin-bottom:0">
-      <div class="log-head">
-        <div class="card-title">لاگ</div>
-        <a class="refresh" href="">تازه‌سازی</a>
-      </div>
-      <p class="hint">جدیدترین خط بالاست</p>
-      <?php if ($logHealth['detail'] !== ''): ?>
-        <div class="last-line"><?= h($logHealth['detail']) ?></div>
-      <?php endif; ?>
+  <section class="log-panel">
+    <div class="log-top">
+      <span>لاگ سیستم</span>
+      <a href="">تازه‌سازی</a>
+    </div>
+    <div class="log-body">
       <pre><?= h($logTxt) ?></pre>
-    </section>
-  </div>
+    </div>
+  </section>
 
   <?php if ($run_output !== ''): ?>
-    <section class="card" style="margin-top:12px">
-      <div class="card-title">خروجی همگام‌سازی</div>
-      <pre><?= h($run_output) ?></pre>
+    <section class="log-panel output-panel">
+      <div class="log-top"><span>خروجی همگام‌سازی</span></div>
+      <div class="log-body"><pre><?= h($run_output) ?></pre></div>
     </section>
   <?php endif; ?>
 
