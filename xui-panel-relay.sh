@@ -29,11 +29,24 @@ if [ -z "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# shellcheck source=/dev/null
-. "$CONFIG_FILE"
+RELAY_INTERVAL_SEC=4
+LOG_FILE="/var/log/xui-outbound/sync.log"
+SITE_URL=""
+MOBILE_TOKEN=""
+REST_STYLE=""
+LAST_LOADED_SITE_URL=""
 
-RELAY_INTERVAL_SEC="${RELAY_INTERVAL_SEC:-4}"
-LOG_FILE="${LOG_FILE:-/var/log/xui-outbound/sync.log}"
+load_config() {
+    # shellcheck source=/dev/null
+    . "$CONFIG_FILE"
+    RELAY_INTERVAL_SEC="${RELAY_INTERVAL_SEC:-4}"
+    LOG_FILE="${LOG_FILE:-/var/log/xui-outbound/sync.log}"
+    if [ -n "${LAST_LOADED_SITE_URL:-}" ] && [ "${LAST_LOADED_SITE_URL}" != "${SITE_URL:-}" ]; then
+        REST_STYLE=""
+        log "Config reloaded — SITE_URL now ${SITE_URL:-<empty>}"
+    fi
+    LAST_LOADED_SITE_URL="${SITE_URL:-}"
+}
 
 log() {
     local line="[$(date '+%Y-%m-%d %H:%M:%S')] [relay] $*"
@@ -45,8 +58,9 @@ log() {
 validate_config() {
     if [ -z "${SITE_URL:-}" ] || [ -z "${MOBILE_TOKEN:-}" ]; then
         log "[ERROR] SITE_URL and MOBILE_TOKEN must be set in config"
-        exit 1
+        return 1
     fi
+    return 0
 }
 
 api_curl() {
@@ -55,7 +69,6 @@ api_curl() {
         "$@"
 }
 
-REST_STYLE=""
 rest_url() {
     local route="$1"
     if [ "$REST_STYLE" = "query" ]; then
@@ -111,15 +124,20 @@ detect_rest_style() {
 MODE="${1:-loop}"
 case "$MODE" in
     once)
-        validate_config
+        load_config
+        validate_config || exit 1
         detect_rest_style || true
         process_panel_jobs_once
         ;;
     loop)
-        validate_config
+        load_config
+        validate_config || exit 1
         detect_rest_style || true
-        log "Panel relay loop started (every ${RELAY_INTERVAL_SEC}s)"
+        log "Panel relay loop started (every ${RELAY_INTERVAL_SEC}s) SITE_URL=${SITE_URL:-?}"
         while true; do
+            load_config
+            validate_config || { sleep "$RELAY_INTERVAL_SEC"; continue; }
+            detect_rest_style || true
             process_panel_jobs_once || true
             sleep "$RELAY_INTERVAL_SEC"
         done

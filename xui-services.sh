@@ -87,6 +87,11 @@ stop_relay() {
     rm -f "$RELAY_PID"
 }
 
+restart_relay() {
+    stop_relay
+    start_relay
+}
+
 status_services() {
     if crond_running; then
         echo "crond: running"
@@ -127,11 +132,14 @@ case "${1:-start}" in
         start_relay
         termux-wake-lock 2>/dev/null || true
         ;;
+    restart-relay)
+        restart_relay
+        ;;
     status)
         status_services
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status}" >&2
+        echo "Usage: $0 {start|stop|restart|restart-relay|status}" >&2
         exit 2
         ;;
 esac
