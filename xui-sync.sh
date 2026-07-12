@@ -300,10 +300,19 @@ sync_once() {
         p_msg="$(jq -r '.msg // ""' "$tmp_push_resp" 2>/dev/null)"
 
         if [ "$p_ok" = "true" ]; then
-            local added skipped
+            local added skipped promoted tested active
             added="$(jq -r '.added // 0' "$tmp_push_resp")"
             skipped="$(jq -r '.skipped // 0' "$tmp_push_resp")"
-            log "  #$id $name: OK — added $added, skipped $skipped. $p_msg"
+            promoted="$(jq -r '.promoted // 0' "$tmp_push_resp" 2>/dev/null)"
+            tested="$(jq -r '.tested // 0' "$tmp_push_resp" 2>/dev/null)"
+            active="$(jq -r '.active // 0' "$tmp_push_resp" 2>/dev/null)"
+            if [ "${promoted:-0}" -gt 0 ] 2>/dev/null; then
+                log "  #$id $name: OK — added $added, promoted $promoted, active $active. $p_msg"
+            elif [ "${tested:-0}" -gt 0 ] 2>/dev/null; then
+                log "  #$id $name: OK — added $added, tested $tested (staging). $p_msg"
+            else
+                log "  #$id $name: OK — added $added, skipped $skipped. $p_msg"
+            fi
             ok_count=$((ok_count + 1))
         else
             log "  #$id $name: FAILED — ${p_msg:-$push_resp}"
