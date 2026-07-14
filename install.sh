@@ -22,9 +22,16 @@ if [ ! -f "$SCRIPT_DIR/config.sh" ]; then
     echo "==> Created config.sh (edit it from the web panel)."
 fi
 
-chmod +x "$SCRIPT_DIR/xui-sync.sh" "$SCRIPT_DIR/xui-services.sh"
+chmod +x "$SCRIPT_DIR/xui-sync.sh" "$SCRIPT_DIR/xui-services.sh" "$SCRIPT_DIR/xui-free-config-probe.sh" "$SCRIPT_DIR/install-xray.sh" 2>/dev/null || true
 
-echo "==> Scheduling hourly sync (cron)..."
+echo "==> Installing Xray for config probe (optional)…"
+if bash "$SCRIPT_DIR/install-xray.sh" 2>/dev/null; then
+    echo "==> Xray installed."
+else
+    echo "==> Xray skipped or failed — TCP-only probe fallback."
+fi
+
+echo "==> Scheduling hourly sync (cron)…"
 CRON_LINE="0 * * * * $SCRIPT_DIR/xui-sync.sh once >> $STATE_DIR/cron.log 2>&1"
 EXISTING="$(crontab -l 2>/dev/null || true)"
 if echo "$EXISTING" | grep -Fq "$SCRIPT_DIR/xui-sync.sh once"; then

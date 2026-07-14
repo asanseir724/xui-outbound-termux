@@ -11,8 +11,10 @@ STATE_DIR="${STATE_DIR:-$HOME/.config/xui-sync}"
 PANEL_PORT="${PANEL_PORT:-8088}"
 PANEL_PID="$STATE_DIR/panel.pid"
 RELAY_PID="$STATE_DIR/panel-relay.pid"
+PROBE_PID="$STATE_DIR/free-config-probe.pid"
 PANEL_LOG="$STATE_DIR/panel.log"
 RELAY_LOG="$STATE_DIR/panel-relay.log"
+PROBE_LOG="$STATE_DIR/free-config-probe.log"
 
 mkdir -p "$STATE_DIR"
 
@@ -22,6 +24,10 @@ panel_running() {
 
 relay_running() {
     [ -f "$RELAY_PID" ] && kill -0 "$(cat "$RELAY_PID")" 2>/dev/null
+}
+
+probe_running() {
+    [ -f "$PROBE_PID" ] && kill -0 "$(cat "$PROBE_PID")" 2>/dev/null
 }
 
 crond_running() {
@@ -92,6 +98,34 @@ restart_relay() {
     start_relay
 }
 
+start_probe() {
+    if probe_running; then
+        return 0
+    fi
+    if [ ! -f "$SCRIPT_DIR/xui-free-config-probe.sh" ]; then
+        return 0
+    fi
+    export XUI_VPN_PLUGIN_DIR="${XUI_VPN_PLUGIN_DIR:-$SCRIPT_DIR/probe-php/}"
+    if [ -z "${XRAY_BIN:-}" ] && [ -x "$STATE_DIR/xray/xray" ]; then
+        export XRAY_BIN="$STATE_DIR/xray/xray"
+    fi
+    nohup bash "$SCRIPT_DIR/xui-free-config-probe.sh" loop >>"$PROBE_LOG" 2>&1 &
+    echo $! >"$PROBE_PID"
+    sleep 1
+}
+
+stop_probe() {
+    if probe_running; then
+        kill "$(cat "$PROBE_PID")" 2>/dev/null || true
+    fi
+    rm -f "$PROBE_PID"
+}
+
+restart_probe() {
+    stop_probe
+    start_probe
+}
+
 status_services() {
     if crond_running; then
         echo "crond: running"
@@ -108,6 +142,11 @@ status_services() {
     else
         echo "panel-relay: stopped"
     fi
+    if probe_running; then
+        echo "free-config-probe: running"
+    else
+        echo "free-config-probe: stopped"
+    fi
 }
 
 case "${1:-start}" in
@@ -115,31 +154,38 @@ case "${1:-start}" in
         start_crond
         start_panel
         start_relay
+        start_probe
         termux-wake-lock 2>/dev/null || true
         ;;
     stop)
+        stop_probe
         stop_relay
         stop_panel
         stop_crond
         termux-wake-unlock 2>/dev/null || true
         ;;
     restart)
+        stop_probe
         stop_relay
         stop_panel
         stop_crond
         start_crond
         start_panel
         start_relay
+        start_probe
         termux-wake-lock 2>/dev/null || true
         ;;
     restart-relay)
         restart_relay
         ;;
+    restart-probe)
+        restart_probe
+        ;;
     status)
         status_services
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|restart-relay|status}" >&2
+        echo "Usage: $0 {start|stop|restart|restart-relay|restart-probe|status}" >&2
         exit 2
         ;;
 esac

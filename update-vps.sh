@@ -40,11 +40,15 @@ if [ -z "$src" ]; then
 fi
 
 echo "==> Updating scripts in $INSTALL_DIR (config untouched)…"
-for f in xui-sync.sh xui-panel-relay.sh panel-relay-lib.sh panel-relay-exec.php xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
+for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
     if [ -f "$src/$f" ]; then
         cp -f "$src/$f" "$INSTALL_DIR/$f"
     fi
 done
+if [ -d "$src/probe-php" ]; then
+    mkdir -p "$INSTALL_DIR/probe-php"
+    cp -rf "$src/probe-php/"* "$INSTALL_DIR/probe-php/" 2>/dev/null || true
+fi
 if [ -d "$src/panel" ]; then
     mkdir -p "$INSTALL_DIR/panel"
     cp -f "$src/panel/"* "$INSTALL_DIR/panel/" 2>/dev/null || true
@@ -78,11 +82,48 @@ fi
 
 ver=""
 relay_ver=""
+probe_ver=""
 if grep -q '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" 2>/dev/null; then
     ver="$(grep '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" | head -n1 | cut -d'"' -f2)"
 fi
 if grep -q '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" 2>/dev/null; then
     relay_ver="$(grep '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
+fi
+
+if grep -q '^FREE_CONFIG_PROBE_VERSION=' "$INSTALL_DIR/free-config-probe-lib.sh" 2>/dev/null; then
+    probe_ver="$(grep '^FREE_CONFIG_PROBE_VERSION=' "$INSTALL_DIR/free-config-probe-lib.sh" | head -n1 | cut -d'"' -f2)"
+fi
+
+# Ensure Xray is present
+if [ -f "$INSTALL_DIR/install-xray.sh" ] && [ ! -x "$STATE_DIR/xray/xray" ]; then
+    echo "==> Installing Xray…"
+    bash "$INSTALL_DIR/install-xray.sh" || echo "[WARN] Xray install failed"
+fi
+
+systemctl daemon-reload 2>/dev/null || true
+
+# Install free-config-probe service if missing
+if [ -f "$INSTALL_DIR/xui-free-config-probe.sh" ] && [ ! -f /etc/systemd/system/xui-free-config-probe.service ]; then
+    cat > /etc/systemd/system/xui-free-config-probe.service <<UNIT
+[Unit]
+Description=XUI free-config probe relay (VPS → WordPress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=XUI_STATE_DIR=$STATE_DIR
+Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
+Environment=XUI_VPN_PLUGIN_DIR=$INSTALL_DIR/probe-php/
+Environment=XRAY_BIN=$STATE_DIR/xray/xray
+ExecStart=/usr/bin/env bash $INSTALL_DIR/xui-free-config-probe.sh loop
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
 fi
 
 systemctl daemon-reload 2>/dev/null || true
@@ -110,7 +151,9 @@ UNIT
 fi
 
 systemctl enable xui-panel-relay.service 2>/dev/null || true
+systemctl enable xui-free-config-probe.service 2>/dev/null || true
 systemctl restart xui-panel-relay.service 2>/dev/null || true
+systemctl restart xui-free-config-probe.service 2>/dev/null || true
 systemctl restart xui-panel.service 2>/dev/null || true
 
 echo ""
@@ -121,6 +164,9 @@ if [ -n "$ver" ]; then
 fi
 if [ -n "$relay_ver" ]; then
     echo "  نسخه panel-relay: $relay_ver"
+fi
+if [ -n "${probe_ver:-}" ]; then
+    echo "  نسخه free-config-probe: $probe_ver"
 fi
 echo "  پنل را باز کنید و «اجرای همگام‌سازی الان» را بزنید."
 echo "  باید در لاگ ببینید: xui-sync $ver"

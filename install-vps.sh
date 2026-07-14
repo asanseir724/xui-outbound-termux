@@ -100,6 +100,16 @@ fi
 chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# 2b. Xray for free-config probe
+# ---------------------------------------------------------------------------
+echo "==> Installing Xray for config probe…"
+if bash "$INSTALL_DIR/install-xray.sh"; then
+    echo "==> Xray OK."
+else
+    echo "[WARN] Xray install failed — probe will use TCP-only fallback until fixed."
+fi
+
+# ---------------------------------------------------------------------------
 # 3. Config
 # ---------------------------------------------------------------------------
 mkdir -p "$STATE_DIR" /var/log/xui-outbound
@@ -174,6 +184,30 @@ WantedBy=multi-user.target
 UNIT
 
 # ---------------------------------------------------------------------------
+# 5c. systemd: free-config probe loop (Xray tests for WordPress host)
+# ---------------------------------------------------------------------------
+cat > /etc/systemd/system/xui-free-config-probe.service <<UNIT
+[Unit]
+Description=XUI free-config probe relay (VPS → WordPress)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=XUI_STATE_DIR=$STATE_DIR
+Environment=XUI_SYNC_CONFIG=$STATE_DIR/config.sh
+Environment=XUI_VPN_PLUGIN_DIR=$INSTALL_DIR/probe-php/
+Environment=XRAY_BIN=$STATE_DIR/xray/xray
+ExecStart=/usr/bin/env bash $INSTALL_DIR/xui-free-config-probe.sh loop
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# ---------------------------------------------------------------------------
 # 6. systemd: always-on web panel
 # ---------------------------------------------------------------------------
 cat > /etc/systemd/system/xui-panel.service <<UNIT
@@ -200,6 +234,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now xui-sync.timer
 systemctl enable --now xui-panel-relay.service
+systemctl enable --now xui-free-config-probe.service
 systemctl enable --now xui-panel.service
 
 # ---------------------------------------------------------------------------
@@ -237,6 +272,7 @@ echo ""
 echo "  دستورات مفید:"
 echo "    systemctl status xui-panel        وضعیت پنل"
 echo "    systemctl status xui-panel-relay  وضعیت relay پنل خارجی"
+echo "    systemctl status xui-free-config-probe  وضعیت تست کانفیگ رایگان"
 echo "    systemctl status xui-sync.timer   وضعیت زمان‌بندی"
 echo "    systemctl start  xui-sync         اجرای دستی همگام‌سازی"
 echo "    journalctl -u xui-sync -n 50      لاگ همگام‌سازی"

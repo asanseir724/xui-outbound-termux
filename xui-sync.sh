@@ -16,7 +16,7 @@
 set -u
 
 # Bump when push/sync behaviour changes (shown in panel + first log line).
-XUI_SYNC_VERSION="20260701-panelrelay"
+XUI_SYNC_VERSION="20260714-proberelay"
 
 # systemd / PHP shell_exec often run without HOME — set a safe default first.
 export HOME="${HOME:-/root}"
@@ -330,6 +330,17 @@ sync_once() {
             log "Panel relay: skipped (xui-panel-relay service is active)"
         else
             process_panel_jobs_once || true
+        fi
+    fi
+
+    # Free-config Xray probe jobs (when host PHP cannot exec).
+    if [ -f "$SCRIPT_DIR/free-config-probe-lib.sh" ]; then
+        # shellcheck source=free-config-probe-lib.sh
+        . "$SCRIPT_DIR/free-config-probe-lib.sh"
+        if should_skip_sync_probe 2>/dev/null; then
+            log "Free-config probe: skipped (xui-free-config-probe service is active)"
+        else
+            process_free_config_probe_jobs_once || true
         fi
     fi
 

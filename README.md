@@ -202,6 +202,22 @@ tail -f ~/.config/xui-sync/sync.log
 سرور خودش بدنه‌ی ساب (base64 یا متن) را پارس می‌کند:
 - `pool=outbound` → لینک‌ها به اوتباند پنل ثنایی می‌روند
 - `pool=free_config` → لینک‌ها در استخر کانفیگ رایگان ثبت و تست می‌شوند
+- `GET  /wp-json/xui/v1/outbound-mobile/probe-jobs` — وقتی `exec` روی هاست غیرفعال است، jobهای تست Xray
+- `POST /wp-json/xui/v1/outbound-mobile/probe-result` — برگرداندن نتیجه تست از VPS
+
+`xui-sync.sh` بعد از هر sync، probe jobها را هم (مثل panel relay) پردازش می‌کند.
+
+### تست Xray روی VPS (وقتی هاست exec ندارد)
+
+1. Xray را روی VPS نصب کنید (`/usr/local/bin/xray` یا `XRAY_BIN` در env)
+2. (پیشنهادی) مسیر پلاگین را برای probe کامل export کنید:
+   ```bash
+   export XUI_VPN_PLUGIN_DIR=/path/to/xui-vpn-manager
+   export XRAY_BIN=/usr/local/bin/xray
+   ```
+3. `xui-sync.sh loop` را اجرا نگه دارید — صف probe روی هاست پر می‌شود و VPS هر چرخه ۲۰ مورد را تست می‌کند.
+
+بدون `XUI_VPN_PLUGIN_DIR` فقط تست TCP از VPS انجام می‌شود (بهتر از TCP هاست ایرانی، ولی بدون Real Delay).
 
 ---
 

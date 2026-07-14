@@ -39,5 +39,8 @@ FETCH_RETRY_DELAY=15
 # فاصله بین هر poll برای jobهای API پنل خارجی (ثانیه) — سرویس xui-panel-relay
 RELAY_INTERVAL_SEC=4
 
+# فاصله بین هر poll برای تست کانفیگ رایگان (ثانیه) — سرویس xui-free-config-probe
+PROBE_INTERVAL_SEC=30
+
 # مسیر فایل لاگ
 LOG_FILE="$HOME/.config/xui-sync/sync.log"
