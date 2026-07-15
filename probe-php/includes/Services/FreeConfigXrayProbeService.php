@@ -263,7 +263,25 @@ class FreeConfigXrayProbeService {
         if (preg_match('/@[^:\/?#]+:(\d+)/', $uri, $m)) {
             return max(1, min(65535, (int) $m[1]));
         }
-        if (preg_match('/^(?:vmess|vless|trojan|ss|hysteria2?|tuic):\/\//i', $uri)) {
+        if (preg_match('/^vmess:\/\/(.+)$/i', $uri, $m)) {
+            $payload = trim($m[1]);
+            $hashPos = strpos($payload, '#');
+            if ($hashPos !== false) {
+                $payload = substr($payload, 0, $hashPos);
+            }
+            $json = base64_decode(strtr($payload, '-_', '+/'), true);
+            if ($json === false || $json === '') {
+                $json = base64_decode($payload, true);
+            }
+            if (is_string($json) && $json !== '') {
+                $data = json_decode($json, true);
+                if (is_array($data) && isset($data['port'])) {
+                    return max(1, min(65535, (int) $data['port']));
+                }
+            }
+            return 443;
+        }
+        if (preg_match('/^(?:vless|trojan|ss|hysteria2?|tuic):\/\//i', $uri)) {
             return 443;
         }
         return 0;
