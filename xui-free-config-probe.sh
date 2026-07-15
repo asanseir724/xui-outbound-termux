@@ -28,7 +28,9 @@ if [ -z "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-PROBE_INTERVAL_SEC=30
+PROBE_INTERVAL_SEC=5
+PROBE_BATCH_LIMIT=40
+PROBE_PARALLEL=4
 LOG_FILE="/var/log/xui-outbound/sync.log"
 SITE_URL=""
 MOBILE_TOKEN=""
@@ -38,8 +40,11 @@ LAST_LOADED_SITE_URL=""
 load_config() {
     # shellcheck source=/dev/null
     . "$CONFIG_FILE"
-    PROBE_INTERVAL_SEC="${PROBE_INTERVAL_SEC:-30}"
+    PROBE_INTERVAL_SEC="${PROBE_INTERVAL_SEC:-5}"
+    PROBE_BATCH_LIMIT="${PROBE_BATCH_LIMIT:-40}"
+    PROBE_PARALLEL="${PROBE_PARALLEL:-4}"
     LOG_FILE="${LOG_FILE:-/var/log/xui-outbound/sync.log}"
+    export PROBE_BATCH_LIMIT PROBE_PARALLEL
     if [ -n "${LAST_LOADED_SITE_URL:-}" ] && [ "${LAST_LOADED_SITE_URL}" != "${SITE_URL:-}" ]; then
         REST_STYLE=""
         log "Config reloaded — SITE_URL now ${SITE_URL:-<empty>}"

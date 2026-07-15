@@ -172,24 +172,73 @@ class FreeConfigXrayProbeService {
             }
             $method = 'tcp+xray';
 
-            if ($this->is_real_delay_enabled()) {
+            // تنظیمات: فقط Real Delay = سالم (مثل Ctrl+R در کلاینت، نه tcping)
+            if ($this->wants_real_delay_only()) {
+                if (!$this->can_run_real_delay_probe()) {
+                    $why = [];
+                    if ($this->resolve_binary() === '') {
+                        $why[] = 'xray missing';
+                    }
+                    if (!function_exists('proc_open')) {
+                        $why[] = 'proc_open disabled';
+                    }
+                    if (!function_exists('curl_init')) {
+                        $why[] = 'curl missing';
+                    }
+                    $err = $why !== [] ? implode(', ', $why) : 'real delay unavailable';
+                    $this->log_probe('warn', 'Real delay required but cannot run', [
+                        'host'  => $host,
+                        'error' => $err,
+                    ]);
+                    return [
+                        'alive'   => false,
+                        'ping_ms' => null,
+                        'method'  => 'xray-real-delay',
+                        'error'   => $err,
+                    ];
+                }
+
                 $this->log_probe('debug', 'Real delay probe start', ['host' => $host]);
                 $real = $this->measure_real_delay_with_xray($outbound);
                 if (!empty($real['ok']) && isset($real['delay_ms']) && (int) $real['delay_ms'] > 0) {
                     $ping_ms = (int) $real['delay_ms'];
-                    $method  = 'xray-real-delay';
                     $this->log_probe('ok', 'Real delay OK', [
                         'host'     => $host,
                         'delay_ms' => $ping_ms,
                     ]);
-                } else {
-                    $this->log_probe('warn', 'Real delay failed — using TCP', [
-                        'host'  => $host,
-                        'error' => (string) ($real['error'] ?? 'unknown'),
-                        'tcp_ms'=> $ping_ms,
-                    ]);
+                    return [
+                        'alive'   => true,
+                        'ping_ms' => $ping_ms,
+                        'method'  => 'xray-real-delay',
+                    ];
                 }
+
+                $this->log_probe('warn', 'Real delay failed — reject (no TCP fallback)', [
+                    'host'  => $host,
+                    'error' => (string) ($real['error'] ?? 'unknown'),
+                    'tcp_ms'=> $ping_ms,
+                ]);
+                return [
+                    'alive'   => false,
+                    'ping_ms' => null,
+                    'method'  => 'xray-real-delay',
+                    'error'   => (string) ($real['error'] ?? 'real delay failed'),
+                ];
             }
+
+            // Real Delay خاموش است — tcp+xray مجاز.
+            return ['alive' => true, 'ping_ms' => $ping_ms, 'method' => $method];
+        }
+
+        // بدون Xray / بدون Real Delay: TCP به‌تنهایی سالم محسوب نمی‌شود وقتی Real Delay روشن است.
+        if ($this->wants_real_delay_only()) {
+            $this->log_probe('warn', 'Real delay required but Xray unavailable', ['host' => $host]);
+            return [
+                'alive'   => false,
+                'ping_ms' => null,
+                'method'  => 'xray-real-delay',
+                'error'   => 'xray/real-delay unavailable',
+            ];
         }
 
         if ($ping_ms !== null) {
@@ -203,6 +252,13 @@ class FreeConfigXrayProbeService {
         return ['alive' => true, 'ping_ms' => $ping_ms, 'method' => $method];
     }
 
+    /**
+     * وقتی Real Delay در تنظیمات روشن است، TCP-only را سالم حساب نکن.
+     */
+    public function wants_real_delay_only(): bool {
+        return get_option('xui_free_config_real_delay_enabled', '1') === '1';
+    }
+
     public static function extract_port(string $uri): int {
         if (preg_match('/@[^:\/?#]+:(\d+)/', $uri, $m)) {
             return max(1, min(65535, (int) $m[1]));
@@ -214,13 +270,19 @@ class FreeConfigXrayProbeService {
     }
 
     public function resolve_binary(): string {
+        $candidates = [];
+
+        $env = getenv('XRAY_BIN');
+        if (is_string($env) && trim($env) !== '') {
+            $candidates[] = trim($env);
+        }
+
         $custom = trim((string) get_option('xui_free_config_xray_path', ''));
-        if ($custom !== '' && $this->is_usable_binary($custom)) {
-            return $custom;
+        if ($custom !== '') {
+            $candidates[] = $custom;
         }
 
         $dir = defined('XUI_VPN_PLUGIN_DIR') ? XUI_VPN_PLUGIN_DIR . 'bin/xray/' : '';
-        $candidates = [];
         if ($dir !== '') {
             if (stripos(PHP_OS_FAMILY, 'Windows') !== false) {
                 $candidates[] = $dir . 'xray.exe';
@@ -230,7 +292,12 @@ class FreeConfigXrayProbeService {
                 $candidates[] = $dir . 'Xray-linux-64/xray';
             }
         }
-        foreach (['/usr/local/bin/xray', '/usr/bin/xray', '/bin/xray'] as $system_path) {
+        foreach ([
+            '/etc/xui-outbound/xray/xray',
+            '/usr/local/bin/xray',
+            '/usr/bin/xray',
+            '/bin/xray',
+        ] as $system_path) {
             $candidates[] = $system_path;
         }
 
@@ -258,13 +325,120 @@ class FreeConfigXrayProbeService {
      */
     private function build_outbound_from_uri(string $uri): ?array {
         $outbound_svc = new OutboundSyncService();
-        $outbound     = $outbound_svc->parse_link_to_outbound($uri, 'fc');
-        return is_array($outbound) ? $outbound : null;
+        $parsed       = $outbound_svc->parse_link_to_outbound($uri, 'fc');
+        if (!is_array($parsed)) {
+            return null;
+        }
+        // parse_link_to_outbound → {tag, outbound} — خودِ outbound لازم است.
+        if (isset($parsed['outbound']) && is_array($parsed['outbound'])) {
+            $ob = $parsed['outbound'];
+            if (!empty($parsed['tag']) && empty($ob['tag'])) {
+                $ob['tag'] = (string) $parsed['tag'];
+            }
+            return $this->to_xray_runtime_outbound($ob);
+        }
+        if (!empty($parsed['protocol'])) {
+            return $this->to_xray_runtime_outbound($parsed);
+        }
+        return null;
+    }
+
+    /**
+     * تبدیل فرمت پنل ثنایی (flat) به فرمت اجرایی Xray-core.
+     *
+     * @param array<string,mixed> $ob
+     * @return array<string,mixed>|null
+     */
+    private function to_xray_runtime_outbound(array $ob): ?array {
+        $protocol = strtolower((string) ($ob['protocol'] ?? ''));
+        $settings = is_array($ob['settings'] ?? null) ? $ob['settings'] : [];
+        $stream   = is_array($ob['streamSettings'] ?? null) ? $ob['streamSettings'] : new \stdClass();
+        $tag      = (string) ($ob['tag'] ?? 'proxy');
+
+        if ($protocol === '') {
+            return null;
+        }
+
+        if ($protocol === 'vless') {
+            // پنل: address/port/id — Xray نیاز به vnext دارد.
+            if (!empty($settings['address']) && empty($settings['vnext'])) {
+                $user = [
+                    'id'         => (string) ($settings['id'] ?? ''),
+                    'encryption' => (string) ($settings['encryption'] ?? 'none'),
+                ];
+                $flow = trim((string) ($settings['flow'] ?? ''));
+                if ($flow !== '') {
+                    $user['flow'] = $flow;
+                }
+                $settings = [
+                    'vnext' => [[
+                        'address' => (string) $settings['address'],
+                        'port'    => max(1, (int) ($settings['port'] ?? 443)),
+                        'users'   => [$user],
+                    ]],
+                ];
+            }
+        } elseif ($protocol === 'vmess') {
+            if (!empty($settings['address']) && empty($settings['vnext'])) {
+                $settings = [
+                    'vnext' => [[
+                        'address' => (string) $settings['address'],
+                        'port'    => max(1, (int) ($settings['port'] ?? 443)),
+                        'users'   => [[
+                            'id'       => (string) ($settings['id'] ?? ''),
+                            'security' => (string) ($settings['security'] ?? 'auto'),
+                        ]],
+                    ]],
+                ];
+            }
+        } elseif ($protocol === 'trojan' || $protocol === 'shadowsocks') {
+            if (!empty($settings['address']) && empty($settings['servers'])) {
+                $server = [
+                    'address'  => (string) $settings['address'],
+                    'port'     => max(1, (int) ($settings['port'] ?? 443)),
+                    'password' => (string) ($settings['password'] ?? ''),
+                ];
+                if ($protocol === 'shadowsocks') {
+                    $server['method'] = (string) ($settings['method'] ?? 'aes-256-gcm');
+                }
+                $settings = ['servers' => [$server]];
+            }
+        }
+
+        $out = [
+            'tag'            => $tag !== '' ? $tag : 'proxy',
+            'protocol'       => $protocol,
+            'settings'       => $settings,
+            'streamSettings' => $stream === [] ? new \stdClass() : $stream,
+        ];
+
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @return string|false absolute path to .json config
+     */
+    private function write_xray_config_json(array $config) {
+        $json = wp_json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (!is_string($json) || $json === '' || $json === 'false') {
+            $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if (!is_string($json) || strlen($json) < 20) {
+            return false;
+        }
+
+        $dir = function_exists('sys_get_temp_dir') ? sys_get_temp_dir() : '/tmp';
+        $path = rtrim($dir, '/\\') . '/xui-xray-' . bin2hex(random_bytes(6)) . '.json';
+        if (@file_put_contents($path, $json) === false) {
+            return false;
+        }
+        return $path;
     }
 
     /**
      * @param array<string,mixed> $outbound
-     * @return array{ok:bool,error?:string}
+     * @return array{ok:bool,error?:string,skipped?:bool}
      */
     private function validate_with_xray(array $outbound): array {
         $bin = $this->resolve_binary();
@@ -286,15 +460,13 @@ class FreeConfigXrayProbeService {
             ],
         ];
 
-        $tmp = $this->make_temp_file('xui-xray-test');
+        $tmp = $this->write_xray_config_json($config);
         if ($tmp === false) {
-            return ['ok' => true, 'skipped' => true];
+            return ['ok' => false, 'error' => 'config json encode failed'];
         }
 
-        file_put_contents($tmp, wp_json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-        $cmd  = escapeshellarg($bin) . ' run -test -config ' . escapeshellarg($tmp);
-        $run  = $this->run_shell_command($cmd);
+        $cmd = escapeshellarg($bin) . ' run -test -format json -c ' . escapeshellarg($tmp);
+        $run = $this->run_shell_command($cmd);
         @unlink($tmp);
 
         if (!empty($run['skipped'])) {
@@ -302,6 +474,11 @@ class FreeConfigXrayProbeService {
         }
         if (empty($run['ok'])) {
             $error = trim(implode("\n", $run['output'] ?? []));
+            // کوتاه کن — لاگ systemd را شلوغ نکند
+            $error = preg_replace('/\s+/', ' ', $error) ?? $error;
+            if (strlen($error) > 220) {
+                $error = substr($error, 0, 220) . '…';
+            }
             return ['ok' => false, 'error' => $error !== '' ? $error : 'xray -test failed'];
         }
 
@@ -353,13 +530,8 @@ class FreeConfigXrayProbeService {
             return ['ok' => false, 'error' => 'no free local port'];
         }
 
-        $cfg_file = $this->make_temp_file('xui-xray-real-delay');
-        if ($cfg_file === false) {
-            return ['ok' => false, 'error' => 'tmp config'];
-        }
-
         $config = [
-            'log'       => ['loglevel' => 'warning'],
+            'log'       => ['loglevel' => 'error'],
             'inbounds'  => [[
                 'listen'   => '127.0.0.1',
                 'port'     => $proxy_port,
@@ -371,9 +543,12 @@ class FreeConfigXrayProbeService {
                 ['protocol' => 'freedom', 'tag' => 'direct'],
             ],
         ];
-        file_put_contents($cfg_file, wp_json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $cfg_file = $this->write_xray_config_json($config);
+        if ($cfg_file === false) {
+            return ['ok' => false, 'error' => 'tmp config json'];
+        }
 
-        $cmd = escapeshellarg($bin) . ' run -config ' . escapeshellarg($cfg_file);
+        $cmd = escapeshellarg($bin) . ' run -format json -c ' . escapeshellarg($cfg_file);
         $desc = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
@@ -391,8 +566,16 @@ class FreeConfigXrayProbeService {
         }
 
         try {
-            if (!$this->wait_for_local_port('127.0.0.1', $proxy_port, 3000)) {
-                return ['ok' => false, 'error' => 'xray proxy not ready'];
+            if (!$this->wait_for_local_port('127.0.0.1', $proxy_port, 4000)) {
+                $err = '';
+                if (isset($pipes[2]) && is_resource($pipes[2])) {
+                    $err = trim((string) stream_get_contents($pipes[2]));
+                    $err = preg_replace('/\s+/', ' ', $err) ?? $err;
+                    if (strlen($err) > 160) {
+                        $err = substr($err, 0, 160) . '…';
+                    }
+                }
+                return ['ok' => false, 'error' => $err !== '' ? $err : 'xray proxy not ready'];
             }
 
             $delay = 0;
@@ -401,7 +584,7 @@ class FreeConfigXrayProbeService {
                     '127.0.0.1',
                     $proxy_port,
                     $url,
-                    max(1200, $this->get_probe_timeout_ms())
+                    max(2000, $this->get_probe_timeout_ms())
                 );
                 if ($delay > 0) {
                     break;
@@ -418,10 +601,50 @@ class FreeConfigXrayProbeService {
                     @fclose($pipes[$idx]);
                 }
             }
-            @proc_terminate($proc);
-            @proc_close($proc);
+            $this->force_stop_proc($proc, $cfg_file);
             @unlink($cfg_file);
         }
+    }
+
+    /**
+     * SIGTERM alone often leaves orphan xray processes — force SIGKILL + pkill by config path.
+     *
+     * @param resource $proc
+     */
+    private function force_stop_proc($proc, string $cfg_file = ''): void {
+        if (!is_resource($proc)) {
+            return;
+        }
+
+        $status = @proc_get_status($proc);
+        $pid    = (int) ($status['pid'] ?? 0);
+
+        @proc_terminate($proc, 15);
+        $deadline = microtime(true) + 0.4;
+        while (microtime(true) < $deadline) {
+            $status = @proc_get_status($proc);
+            if (empty($status['running'])) {
+                break;
+            }
+            usleep(40000);
+        }
+
+        $status = @proc_get_status($proc);
+        if (!empty($status['running'])) {
+            @proc_terminate($proc, 9);
+            if ($pid > 0 && function_exists('posix_kill')) {
+                @posix_kill($pid, 9);
+            }
+        }
+
+        if ($cfg_file !== '' && function_exists('exec')) {
+            $needle = basename($cfg_file);
+            if ($needle !== '' && preg_match('/^xui-xray-[a-f0-9]+\.json$/', $needle)) {
+                @exec('pkill -9 -f ' . escapeshellarg($needle) . ' 2>/dev/null');
+            }
+        }
+
+        @proc_close($proc);
     }
 
     private function pick_local_port(): int {
@@ -467,7 +690,7 @@ class FreeConfigXrayProbeService {
         curl_setopt($ch, CURLOPT_MAXREDIRS, 1);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, max(500, min(15000, $timeout_ms)));
         curl_setopt($ch, CURLOPT_TIMEOUT_MS, max(800, min(20000, $timeout_ms + 1500)));
-        curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5_HOSTNAME);
+        curl_setopt($ch, CURLOPT_PROXYTYPE, defined('CURLPROXY_SOCKS5_HOSTNAME') ? CURLPROXY_SOCKS5_HOSTNAME : 7);
         curl_setopt($ch, CURLOPT_PROXY, $proxy_host . ':' . $proxy_port);
         curl_setopt($ch, CURLOPT_USERAGENT, 'XUI-RealDelay/1.0');
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -513,14 +736,7 @@ class FreeConfigXrayProbeService {
     }
 
     private function make_temp_file(string $prefix) {
-        $wp_tmp_fn = 'wp_tempnam';
-        if (function_exists($wp_tmp_fn)) {
-            $tmp = $wp_tmp_fn($prefix);
-            if ($tmp !== false) {
-                return $tmp;
-            }
-        }
-        $dir = function_exists('sys_get_temp_dir') ? sys_get_temp_dir() : '.';
+        $dir = function_exists('sys_get_temp_dir') ? sys_get_temp_dir() : '/tmp';
         $tmp = @tempnam($dir, $prefix);
         return $tmp === false ? false : $tmp;
     }

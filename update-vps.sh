@@ -40,7 +40,7 @@ if [ -z "$src" ]; then
 fi
 
 echo "==> Updating scripts in $INSTALL_DIR (config untouched)…"
-for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
+for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh enable-free-config-probe.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
     if [ -f "$src/$f" ]; then
         cp -f "$src/$f" "$INSTALL_DIR/$f"
     fi

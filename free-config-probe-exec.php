@@ -36,8 +36,12 @@ if (array_key_exists('real_delay_enabled', $probe_opts)) {
     putenv('XUI_OPT_XUI_FREE_CONFIG_REAL_DELAY_ENABLED=' . (!empty($probe_opts['real_delay_enabled']) ? '1' : '0'));
 }
 if (!empty($probe_opts['xray_path'])) {
-    putenv('XRAY_BIN=' . (string) $probe_opts['xray_path']);
-    putenv('XUI_OPT_XUI_FREE_CONFIG_XRAY_PATH=' . (string) $probe_opts['xray_path']);
+    $candidate = (string) $probe_opts['xray_path'];
+    // فقط اگر باینری روی همین ماشین (VPS) واقعاً وجود داشته باشد — نه مسیر هاست.
+    if (is_file($candidate) && (is_executable($candidate) || stripos(PHP_OS_FAMILY, 'Windows') === false)) {
+        putenv('XRAY_BIN=' . $candidate);
+        putenv('XUI_OPT_XUI_FREE_CONFIG_XRAY_PATH=' . $candidate);
+    }
 }
 if (!empty($probe_opts['real_delay_url'])) {
     putenv('XUI_OPT_XUI_FREE_CONFIG_REAL_DELAY_URL=' . (string) $probe_opts['real_delay_url']);
@@ -46,12 +50,29 @@ if (!empty($probe_opts['real_delay_url'])) {
 if (xui_probe_bootstrap_plugin()) {
     $svc    = new XuiVpn\Services\FreeConfigXrayProbeService();
     $result = $svc->probe_uri($uri);
+
+    $method = (string) ($result['method'] ?? 'tcp');
+    $alive  = !empty($result['alive']);
+
+    // اجبار: فقط نتیجهٔ زندهٔ xray-real-delay قبول است — TCP-up را زنده نگذار.
+    // خطاهای tcp down را به method=xray-real-delay تغییر نده (لاگ گمراه‌کننده می‌شود).
+    $want_real = !array_key_exists('real_delay_enabled', $probe_opts)
+        || !empty($probe_opts['real_delay_enabled']);
+    if ($want_real && $alive && $method !== 'xray-real-delay') {
+        $alive           = false;
+        $result['alive'] = false;
+        $result['ping_ms'] = null;
+        $result['method']  = 'xray-real-delay';
+        $result['error']   = (string) ($result['error'] ?? 'real delay required — tcp rejected');
+    }
+
     echo json_encode([
         'ok'    => true,
         'probe' => [
-            'alive'   => !empty($result['alive']),
-            'ping_ms' => $result['ping_ms'] ?? null,
+            'alive'   => $alive,
+            'ping_ms' => $alive ? ($result['ping_ms'] ?? null) : null,
             'method'  => (string) ($result['method'] ?? 'tcp'),
+            'error'   => (string) ($result['error'] ?? ''),
         ],
     ], JSON_UNESCAPED_UNICODE);
     exit(0);

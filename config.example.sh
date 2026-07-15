@@ -40,7 +40,11 @@ FETCH_RETRY_DELAY=15
 RELAY_INTERVAL_SEC=4
 
 # فاصله بین هر poll برای تست کانفیگ رایگان (ثانیه) — سرویس xui-free-config-probe
-PROBE_INTERVAL_SEC=30
+PROBE_INTERVAL_SEC=5
+# چند job در هر batch از هاست بگیر (حداکثر ۴۰)
+PROBE_BATCH_LIMIT=40
+# چند تست همزمان (۱–۸) — با ۴ حدود ۴× سریع‌تر از سریال
+PROBE_PARALLEL=4
 
 # مسیر فایل لاگ
 LOG_FILE="$HOME/.config/xui-sync/sync.log"
