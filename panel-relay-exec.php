@@ -94,31 +94,66 @@ function cookie_header(array $setCookies): string
 /**
  * @return array{ok:bool,cookie:string,error:string}
  */
-function relay_login(string $panel_url, string $user, string $pass): array
+function relay_login(string $panel_url, string $user, string $pass, string $twoFactorCode = ''): array
 {
+    // 3x-ui / MHSanaei UI posts application/x-www-form-urlencoded via Qs.stringify
+    // (JSON body → "The Input data format is invalid").
     $attempts = [
         [
-            'headers' => ['Content-Type: application/json', 'Accept: application/json'],
-            'body'    => json_encode(['username' => $user, 'password' => $pass]),
+            'headers' => [
+                'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+                'Accept: application/json',
+            ],
+            'body'    => http_build_query([
+                'username'       => $user,
+                'password'       => $pass,
+                'twoFactorCode'  => $twoFactorCode,
+            ]),
         ],
         [
-            'headers' => ['Accept: application/json'],
-            'body'    => http_build_query(['username' => $user, 'password' => $pass]),
+            'headers' => [
+                'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+                'Accept: application/json',
+            ],
+            'body'    => http_build_query([
+                'username' => $user,
+                'password' => $pass,
+            ]),
+        ],
+        [
+            'headers' => ['Content-Type: application/json', 'Accept: application/json'],
+            'body'    => json_encode([
+                'username'      => $user,
+                'password'      => $pass,
+                'twoFactorCode' => $twoFactorCode,
+            ], JSON_UNESCAPED_UNICODE),
         ],
     ];
+
+    $lastMsg = '';
+    $lastCode = 0;
+    $lastCurl = '';
 
     foreach ($attempts as $attempt) {
         $res = relay_http(
             $panel_url . '/login',
             'POST',
             $attempt['body'],
-            $attempt['headers']
+            $attempt['headers'],
+            45
         );
         if (!empty($res['error'])) {
+            $lastCurl = (string) $res['error'];
             continue;
         }
+        $lastCode = (int) ($res['code'] ?? 0);
         $decoded = json_decode($res['body'], true);
-        if (!is_array($decoded) || empty($decoded['success'])) {
+        if (!is_array($decoded)) {
+            $lastMsg = 'non-JSON login response HTTP ' . $lastCode;
+            continue;
+        }
+        if (empty($decoded['success'])) {
+            $lastMsg = trim((string) ($decoded['msg'] ?? $decoded['message'] ?? 'login rejected'));
             continue;
         }
         $cookie = cookie_header($res['cookies']);
@@ -128,7 +163,15 @@ function relay_login(string $panel_url, string $user, string $pass): array
         return ['ok' => true, 'cookie' => $cookie, 'error' => ''];
     }
 
-    return ['ok' => false, 'cookie' => '', 'error' => 'panel login failed'];
+    $err = 'panel login failed';
+    if ($lastMsg !== '') {
+        $err .= ': ' . $lastMsg;
+    } elseif ($lastCurl !== '') {
+        $err .= ': ' . $lastCurl;
+    } elseif ($lastCode > 0) {
+        $err .= ' HTTP ' . $lastCode;
+    }
+    return ['ok' => false, 'cookie' => '', 'error' => $err];
 }
 
 /**
