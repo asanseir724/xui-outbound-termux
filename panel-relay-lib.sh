@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260720-v15"
+PANEL_RELAY_VERSION="20260720-v16"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -58,7 +58,7 @@ process_panel_jobs_once() {
     tmp_jobs="$tmp_dir/jobs.json"
 
     local jobs_target
-    jobs_target="$(append_url_param "$jobs_url" "limit=15")"
+    jobs_target="$(append_url_param "$jobs_url" "limit=20")"
 
     jobs_json="$(api_curl \
         -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
@@ -97,7 +97,7 @@ process_panel_jobs_once() {
 
     log "Panel relay: $job_count job(s) (relay panels on host: $relay_count)"
 
-    local script_dir php_exec i job_json exec_out ok err result_json submit_body submit_resp
+    local script_dir php_exec i
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
     php_exec="$script_dir/panel-relay-exec.php"
     if [ ! -f "$php_exec" ]; then
@@ -106,54 +106,60 @@ process_panel_jobs_once() {
         return 1
     fi
 
+    # Run up to 3 jobs in parallel (cookie cache makes re-login cheap across workers).
+    local max_par=3
     for i in $(seq 0 $((job_count - 1))); do
-        local jid pname
-        jid="$(jq -r ".jobs[$i].id" "$tmp_jobs")"
-        pname="$(jq -r ".jobs[$i].panel_name // \"panel\"" "$tmp_jobs")"
-        job_json="$(jq -c ".jobs[$i]" "$tmp_jobs")"
+        (
+            local jid pname job_json exec_out ok err result_json submit_body submit_resp
+            jid="$(jq -r ".jobs[$i].id" "$tmp_jobs")"
+            pname="$(jq -r ".jobs[$i].panel_name // \"panel\"" "$tmp_jobs")"
+            job_json="$(jq -c ".jobs[$i]" "$tmp_jobs")"
 
-        exec_out="$(printf '%s' "$job_json" | php "$php_exec" 2>&1)" || true
-        ok="$(printf '%s' "$exec_out" | jq -r '.ok // false' 2>/dev/null)"
-        if [ "$ok" = "true" ]; then
-            result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
-            # Huge inbound/xray payloads break ?rest_route= POST on some hosts — keep success only.
-            if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
-                # Prefer dropping clientStats; NEVER delete settings.clients (breaks WP merge/update).
-                result_json="$(printf '%s' "$exec_out" | jq -c '
-                    .result as $r |
-                    if ($r.obj | type) == "array" then
-                      {success: ($r.success // true), obj: [
-                        $r.obj[] | del(.clientStats)
-                      ],
-                      _xui_clients_stripped: false}
-                    else
-                      {success: ($r.success // true), msg: ($r.msg // "ok")}
-                    end
-                ' 2>/dev/null)"
-                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback","_xui_clients_stripped":true}'
+            exec_out="$(printf '%s' "$job_json" | php "$php_exec" 2>&1)" || true
+            ok="$(printf '%s' "$exec_out" | jq -r '.ok // false' 2>/dev/null)"
+            if [ "$ok" = "true" ]; then
+                result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
+                if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
+                    result_json="$(printf '%s' "$exec_out" | jq -c '
+                        .result as $r |
+                        if ($r.obj | type) == "array" then
+                          {success: ($r.success // true), obj: [
+                            $r.obj[] | del(.clientStats)
+                          ],
+                          _xui_clients_stripped: false}
+                        else
+                          {success: ($r.success // true), msg: ($r.msg // "ok")}
+                        end
+                    ' 2>/dev/null)"
+                    [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback","_xui_clients_stripped":true}'
+                fi
+                submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
+                    '{job_id: $job_id, success: true, result: $result}')"
+                log "  job #$jid ($pname): OK"
+            else
+                err="$(printf '%s' "$exec_out" | jq -r '.error // "unknown"' 2>/dev/null)"
+                [ -z "$err" ] || [ "$err" = "null" ] && err="${exec_out:0:200}"
+                submit_body="$(jq -n --argjson job_id "$jid" --arg error "$err" \
+                    '{job_id: $job_id, success: false, error: $error}')"
+                log "  job #$jid ($pname): FAILED — $err"
             fi
-            submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
-                '{job_id: $job_id, success: true, result: $result}')"
-            log "  job #$jid ($pname): OK"
-        else
-            err="$(printf '%s' "$exec_out" | jq -r '.error // "unknown"' 2>/dev/null)"
-            [ -z "$err" ] || [ "$err" = "null" ] && err="${exec_out:0:200}"
-            submit_body="$(jq -n --argjson job_id "$jid" --arg error "$err" \
-                '{job_id: $job_id, success: false, error: $error}')"
-            log "  job #$jid ($pname): FAILED — $err"
-        fi
 
-        submit_resp="$(api_curl \
-            -X POST \
-            -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d "$submit_body" \
-            "$(append_url_param "$result_url" "job_id=${jid}")")"
-        if [ "$(printf '%s' "$submit_resp" | jq -r '.success // false' 2>/dev/null)" != "true" ]; then
-            log "  job #$jid: host rejected result — ${submit_resp:0:120}"
-        fi
+            submit_resp="$(api_curl \
+                -X POST \
+                -H "X-XUI-Mobile-Token: $MOBILE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/json" \
+                -d "$submit_body" \
+                "$(append_url_param "$result_url" "job_id=${jid}")")"
+            if [ "$(printf '%s' "$submit_resp" | jq -r '.success // false' 2>/dev/null)" != "true" ]; then
+                log "  job #$jid: host rejected result — ${submit_resp:0:120}"
+            fi
+        ) &
+        while [ "$(jobs -rp | wc -l)" -ge "$max_par" ]; do
+            wait -n 2>/dev/null || wait
+        done
     done
+    wait
 
     rm -rf "$tmp_dir" 2>/dev/null
     return 0

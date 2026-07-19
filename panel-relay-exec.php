@@ -103,17 +103,19 @@ function relay_login(string $panel_url, string $user, string $pass, string $twoF
             'headers' => [
                 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
                 'Accept: application/json',
+                'X-Requested-With: XMLHttpRequest',
             ],
             'body'    => http_build_query([
-                'username'       => $user,
-                'password'       => $pass,
-                'twoFactorCode'  => $twoFactorCode,
+                'username'      => $user,
+                'password'      => $pass,
+                'twoFactorCode' => $twoFactorCode,
             ]),
         ],
         [
             'headers' => [
                 'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
                 'Accept: application/json',
+                'X-Requested-With: XMLHttpRequest',
             ],
             'body'    => http_build_query([
                 'username' => $user,
@@ -173,6 +175,50 @@ function relay_login(string $panel_url, string $user, string $pass, string $twoF
     }
     return ['ok' => false, 'cookie' => '', 'error' => $err];
 }
+
+function relay_cookie_cache_path(string $panel_url, string $user): string
+{
+    $dir = '/etc/xui-outbound/cache';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0700, true);
+    }
+    if (!is_dir($dir) || !is_writable($dir)) {
+        $dir = sys_get_temp_dir();
+    }
+    return rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+        . 'panel-cookie-' . hash('sha256', $panel_url . "\0" . $user) . '.txt';
+}
+
+function relay_load_cached_cookie(string $panel_url, string $user): string
+{
+    $path = relay_cookie_cache_path($panel_url, $user);
+    if (!is_file($path)) {
+        return '';
+    }
+    if (filemtime($path) < time() - 1800) {
+        @unlink($path);
+        return '';
+    }
+    $raw = trim((string) @file_get_contents($path));
+    return $raw;
+}
+
+function relay_save_cached_cookie(string $panel_url, string $user, string $cookie): void
+{
+    if ($cookie === '') {
+        return;
+    }
+    @file_put_contents(relay_cookie_cache_path($panel_url, $user), $cookie, LOCK_EX);
+}
+
+function relay_clear_cached_cookie(string $panel_url, string $user): void
+{
+    $path = relay_cookie_cache_path($panel_url, $user);
+    if (is_file($path)) {
+        @unlink($path);
+    }
+}
+
 
 /**
  * @param array<string,mixed> $payload
@@ -300,10 +346,15 @@ function maybe_trim_inbounds_list_result(array $result): array
     return ['result' => $result, 'clients_stripped' => true];
 }
 
-$login = relay_login($panel_url, $user, $pass);
-if (!$login['ok']) {
-    echo json_encode(['ok' => false, 'error' => $login['error']], JSON_UNESCAPED_UNICODE);
-    exit(1);
+$cookie = relay_load_cached_cookie($panel_url, $user);
+if ($cookie === '') {
+    $login = relay_login($panel_url, $user, $pass);
+    if (!$login['ok']) {
+        echo json_encode(['ok' => false, 'error' => $login['error']], JSON_UNESCAPED_UNICODE);
+        exit(1);
+    }
+    $cookie = $login['cookie'];
+    relay_save_cached_cookie($panel_url, $user, $cookie);
 }
 
 // Job endpoint is login only — relay_login above is enough (avoid second POST → HTTP 404).
@@ -322,9 +373,26 @@ $req = relay_request(
     $endpoint,
     $method,
     $payload,
-    $login['cookie'],
+    $cookie,
     $forceForm
 );
+
+// Stale session → refresh cookie once and retry
+if (!$req['ok'] && (
+    stripos((string) ($req['error'] ?? ''), 'unauthorized') !== false
+    || stripos((string) ($req['error'] ?? ''), '401') !== false
+    || stripos((string) ($req['error'] ?? ''), '403') !== false
+)) {
+    relay_clear_cached_cookie($panel_url, $user);
+    $login = relay_login($panel_url, $user, $pass);
+    if (!$login['ok']) {
+        echo json_encode(['ok' => false, 'error' => $login['error']], JSON_UNESCAPED_UNICODE);
+        exit(1);
+    }
+    $cookie = $login['cookie'];
+    relay_save_cached_cookie($panel_url, $user, $cookie);
+    $req = relay_request($panel_url, $endpoint, $method, $payload, $cookie, $forceForm);
+}
 
 if (!$req['ok']) {
     echo json_encode(['ok' => false, 'error' => $req['error']], JSON_UNESCAPED_UNICODE);
