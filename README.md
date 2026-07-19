@@ -43,11 +43,16 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 | وضعیت relay پنل خارجی | `systemctl status xui-panel-relay` |
 | وضعیت تست کانفیگ رایگان | `systemctl status xui-free-config-probe` |
 | وضعیت زمان‌بندی | `systemctl status xui-sync.timer` |
-| اجرای دستی همگام‌سازی | `systemctl start xui-sync` |
-| لاگ همگام‌سازی | `journalctl -u xui-sync -n 50` |
-| لاگ تست کانفیگ | `journalctl -u xui-free-config-probe -n 50` |
+| اجرای دستی همگام‌سازی | `systemctl start xui-sync --no-block` |
+| لاگ همگام‌سازی (آخرین خطوط) | `journalctl -u xui-sync -n 50 --no-pager` |
+| دنبال کردن لاگ sync زنده | `journalctl -u xui-sync -f` |
+| لاگ تست کانفیگ | `journalctl -u xui-free-config-probe -n 50 --no-pager` |
+| دنبال کردن لاگ probe | `journalctl -u xui-free-config-probe -f` |
+| لاگ relay پنل | `journalctl -u xui-panel-relay -n 50 --no-pager` |
 | دیدن/تغییر رمز پنل | `cat /etc/xui-outbound/panel-password.txt` |
 | تغییر تنظیمات | `nano /etc/xui-outbound/config.sh` |
+| بررسی SITE_URL و توکن | `grep SITE_URL /etc/xui-outbound/config.sh` |
+| به‌روزرسانی از GitHub | `curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh \| bash` |
 
 ### نصب / تعمیر Xray روی VPS
 
@@ -269,14 +274,56 @@ tail -f ~/.config/xui-sync/sync.log
 
 | مشکل | راه‌حل |
 |---|---|
-| `Empty response from host` | `SITE_URL` اشتباه است یا گوشی به سایت دسترسی ندارد. |
-| `Host rejected request: Invalid token` | `MOBILE_TOKEN` با توکن پنل یکی نیست. |
-| `empty subscription body` | ساب از روی گوشی باز نمی‌شود — هیدیفای را وصل کنید یا `PROXY_URL` را تنظیم کنید. |
+| `Could not resolve host: your-wp-site.com` | هنوز placeholder است — در پنل آدرس واقعی وردپرس + توکن را **ذخیره** کنید، بعد `systemctl start xui-sync --no-block` |
+| `Empty response from host` | `SITE_URL` اشتباه است یا سرور به سایت دسترسی ندارد. |
+| `Host rejected request: Invalid token` | `MOBILE_TOKEN` با توکن پنل وردپرس یکی نیست. |
+| `empty subscription body` | ساب باز نمی‌شود — هیدیفای را وصل کنید یا `PROXY_URL` را تنظیم کنید. |
+| `Operation timed out` هنگام fetch ساب | آن منبع ساب کند/مرده است؛ بقیه منابع ادامه می‌یابند — طبیعی برای ساب رایگان. |
 | فقط `tcp` / بدون `xray-real-delay` | Xray روی VPS نیست — `install-xray.sh` را اجرا کنید. |
-| `parse outbound` | لینک کانفیگ خراب/ناقص است (مشکل Xray نصب نیست). |
+| `parse outbound` | لینک کانفیگ خراب/ناقص است (مشکل نصب Xray نیست). |
 | `host rejected result` | وردپرس نتیجه را نپذیرفت — توکن/آدرس سایت یا REST API را چک کنید. |
 | `panel-jobs: empty response (HTTP=000)` | قطعی لحظه‌ای شبکه تا هاست؛ معمولاً خودبه‌خود درست می‌شود. |
+| `systemctl start xui-sync` گیر می‌کند / Ctrl+C | طبیعی است تا sync تمام شود — با `--no-block` بزنید و لاگ را با `-f` ببینید. |
 | بعد از ریبوت دیگر کار نمی‌کند | Termux:Boot نصب نشده یا بهینه‌سازی باتری روشن است. |
+
+### چک‌لیست سریع روی VPS (وقتی «خطا در لاگ» می‌بینید)
+
+```bash
+# 1) کانفیگ ذخیره‌شده
+grep -E 'SITE_URL|MOBILE_TOKEN' /etc/xui-outbound/config.sh
+
+# 2) وضعیت سرویس‌ها
+systemctl is-active xui-panel xui-panel-relay xui-free-config-probe xui-sync.timer
+
+# 3) Xray
+/etc/xui-outbound/xray/xray version
+
+# 4) sync تازه (بلاک نمی‌کند)
+systemctl start xui-sync --no-block
+journalctl -u xui-sync -n 40 --no-pager
+
+# 5) probe
+journalctl -u xui-free-config-probe -n 40 --no-pager
+
+# 6) دسترسی به وردپرس از خود VPS
+curl -sI "https://YOUR-SITE/" | head -n 5
+curl -sS -H "X-XUI-Mobile-Token: YOUR_TOKEN" \
+  "https://YOUR-SITE/index.php?rest_route=/xui/v1/outbound-mobile/sources" | head -c 200
+echo
+```
+
+اگر مرحله ۱ هنوز `your-wp-site.com` بود → پنل `:8088` → ذخیره تنظیمات → دوباره مرحله ۴.
+
+اگر مرحله ۳ fail بود → بخش **نصب / تعمیر Xray** بالاتر.
+
+اگر sync نوشت `Got N source(s)` ولی بعضی ساب‌ها `FAILED` / timeout → مشکل آن منبع است، نه کل سیستم.
+
+### ری‌استارت سرویس‌ها
+
+```bash
+systemctl restart xui-panel xui-panel-relay xui-free-config-probe
+systemctl start xui-sync --no-block
+```
 
 ## مجوز
 
