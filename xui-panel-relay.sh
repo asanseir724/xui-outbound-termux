@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./xui-panel-relay.sh once
-#   ./xui-panel-relay.sh loop    # every RELAY_INTERVAL_SEC (default 4)
+#   ./xui-panel-relay.sh loop    # every RELAY_INTERVAL_SEC (default 2)
 #
 set -u
 
@@ -29,7 +29,7 @@ if [ -z "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-RELAY_INTERVAL_SEC=4
+RELAY_INTERVAL_SEC=2
 LOG_FILE="/var/log/xui-outbound/sync.log"
 SITE_URL=""
 MOBILE_TOKEN=""
