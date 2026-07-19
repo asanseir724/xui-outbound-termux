@@ -41,11 +41,59 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 |---|---|
 | وضعیت پنل | `systemctl status xui-panel` |
 | وضعیت relay پنل خارجی | `systemctl status xui-panel-relay` |
+| وضعیت تست کانفیگ رایگان | `systemctl status xui-free-config-probe` |
 | وضعیت زمان‌بندی | `systemctl status xui-sync.timer` |
 | اجرای دستی همگام‌سازی | `systemctl start xui-sync` |
 | لاگ همگام‌سازی | `journalctl -u xui-sync -n 50` |
+| لاگ تست کانفیگ | `journalctl -u xui-free-config-probe -n 50` |
 | دیدن/تغییر رمز پنل | `cat /etc/xui-outbound/panel-password.txt` |
 | تغییر تنظیمات | `nano /etc/xui-outbound/config.sh` |
+
+### نصب / تعمیر Xray روی VPS
+
+برای تست واقعی کانفیگ رایگان (`xray-real-delay`) باید باینری Xray روی همان VPS باشد.
+نصب‌کننده اول از **میرور هاست** (`pronet24.ir` — همان فایلی که روی وردپرس آپلود شده) می‌گیرد، اگر نشد از GitHub.
+
+**یک دستور (روی سرور، root):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/install-xray.sh | bash
+```
+
+یا اگر پروژه از قبل در `/opt/xui-outbound` است:
+
+```bash
+bash /opt/xui-outbound/install-xray.sh
+```
+
+فعال‌سازی کامل سرویس probe (نصب Xray + systemd):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
+# یا فقط probe:
+bash /opt/xui-outbound/enable-free-config-probe.sh
+```
+
+بررسی نصب:
+
+```bash
+/etc/xui-outbound/xray/xray version
+# یا
+cat /etc/xui-outbound/xray-path.txt
+systemctl restart xui-free-config-probe
+```
+
+اگر دانلود از GitHub روی سرور محدود بود، دستی از میرور هاست:
+
+```bash
+mkdir -p /etc/xui-outbound/xray
+curl -fSL "https://pronet24.ir/wp-content/plugins/xui-vpn-manager/bin/xray/xui-xray-download.php?key=xui-pronet-diag-2026" \
+  -o /etc/xui-outbound/xray/xray
+chmod +x /etc/xui-outbound/xray/xray
+ln -sf /etc/xui-outbound/xray/xray /usr/local/bin/xray
+echo /etc/xui-outbound/xray/xray > /etc/xui-outbound/xray-path.txt
+systemctl restart xui-free-config-probe
+```
 
 ---
 
@@ -209,15 +257,11 @@ tail -f ~/.config/xui-sync/sync.log
 
 ### تست Xray روی VPS (وقتی هاست exec ندارد)
 
-1. Xray را روی VPS نصب کنید (`/usr/local/bin/xray` یا `XRAY_BIN` در env)
-2. (پیشنهادی) مسیر پلاگین را برای probe کامل export کنید:
-   ```bash
-   export XUI_VPN_PLUGIN_DIR=/path/to/xui-vpn-manager
-   export XRAY_BIN=/usr/local/bin/xray
-   ```
-3. `xui-sync.sh loop` را اجرا نگه دارید — صف probe روی هاست پر می‌شود و VPS هر چرخه ۲۰ مورد را تست می‌کند.
+1. Xray را نصب کنید — بخش **«نصب / تعمیر Xray روی VPS»** بالاتر (یک دستور `install-xray.sh`).
+2. سرویس `xui-free-config-probe` باید فعال باشد (`systemctl status xui-free-config-probe`).
+3. در لاگ باید `xray-real-delay` و گاهی `ALIVE` ببینید — نه فقط `tcp`.
 
-بدون `XUI_VPN_PLUGIN_DIR` فقط تست TCP از VPS انجام می‌شود (بهتر از TCP هاست ایرانی، ولی بدون Real Delay).
+بدون Xray فقط تست TCP انجام می‌شود (بهتر از TCP هاست ایرانی، ولی بدون Real Delay).
 
 ---
 
@@ -228,6 +272,10 @@ tail -f ~/.config/xui-sync/sync.log
 | `Empty response from host` | `SITE_URL` اشتباه است یا گوشی به سایت دسترسی ندارد. |
 | `Host rejected request: Invalid token` | `MOBILE_TOKEN` با توکن پنل یکی نیست. |
 | `empty subscription body` | ساب از روی گوشی باز نمی‌شود — هیدیفای را وصل کنید یا `PROXY_URL` را تنظیم کنید. |
+| فقط `tcp` / بدون `xray-real-delay` | Xray روی VPS نیست — `install-xray.sh` را اجرا کنید. |
+| `parse outbound` | لینک کانفیگ خراب/ناقص است (مشکل Xray نصب نیست). |
+| `host rejected result` | وردپرس نتیجه را نپذیرفت — توکن/آدرس سایت یا REST API را چک کنید. |
+| `panel-jobs: empty response (HTTP=000)` | قطعی لحظه‌ای شبکه تا هاست؛ معمولاً خودبه‌خود درست می‌شود. |
 | بعد از ریبوت دیگر کار نمی‌کند | Termux:Boot نصب نشده یا بهینه‌سازی باتری روشن است. |
 
 ## مجوز
