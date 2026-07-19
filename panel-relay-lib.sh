@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260719-v13"
+PANEL_RELAY_VERSION="20260719-v14"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -118,22 +118,19 @@ process_panel_jobs_once() {
             result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
             # Huge inbound/xray payloads break ?rest_route= POST on some hosts — keep success only.
             if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
+                # Prefer dropping clientStats; NEVER delete settings.clients (breaks WP merge/update).
                 result_json="$(printf '%s' "$exec_out" | jq -c '
                     .result as $r |
                     if ($r.obj | type) == "array" then
                       {success: ($r.success // true), obj: [
-                        $r.obj[] |
-                        if (.settings | type) == "string" then
-                          .settings |= ((fromjson? // {}) | del(.clients) | tojson)
-                        elif (.settings | type) == "object" then
-                          .settings |= del(.clients)
-                        else . end
-                      ]}
+                        $r.obj[] | del(.clientStats)
+                      ],
+                      _xui_clients_stripped: false}
                     else
                       {success: ($r.success // true), msg: ($r.msg // "ok")}
                     end
                 ' 2>/dev/null)"
-                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback"}'
+                [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback","_xui_clients_stripped":true}'
             fi
             submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
                 '{job_id: $job_id, success: true, result: $result}')"

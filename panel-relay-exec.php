@@ -201,17 +201,42 @@ function relay_request(
 }
 
 /**
- * Strip client lists from huge inbounds/list payloads before JSON encode.
+ * Optionally shrink huge inbounds/list JSON before posting back to WordPress.
+ * Prefer keeping settings.clients — stripping them breaks merge/update on WP.
+ * Only strip when payload is enormous; prefer dropping clientStats first.
  *
  * @param array<string,mixed> $result
- * @return array<string,mixed>
+ * @return array{result:array<string,mixed>, clients_stripped:bool}
  */
-function trim_inbounds_list_result(array $result): array
+function maybe_trim_inbounds_list_result(array $result): array
 {
-    if (empty($result['obj']) || !is_array($result['obj'])) {
-        return $result;
+    $encoded = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $size    = is_string($encoded) ? strlen($encoded) : 0;
+    // Keep full clients under ~1.5MB — WP REST can handle this; host may struggle above.
+    if ($size > 0 && $size <= 1500000) {
+        return ['result' => $result, 'clients_stripped' => false];
     }
 
+    if (empty($result['obj']) || !is_array($result['obj'])) {
+        return ['result' => $result, 'clients_stripped' => false];
+    }
+
+    // First pass: drop clientStats (stats only) — keep settings.clients.
+    foreach ($result['obj'] as $idx => $ib) {
+        if (!is_array($ib)) {
+            continue;
+        }
+        unset($ib['clientStats']);
+        $result['obj'][$idx] = $ib;
+    }
+
+    $encoded = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $size    = is_string($encoded) ? strlen($encoded) : 0;
+    if ($size > 0 && $size <= 1500000) {
+        return ['result' => $result, 'clients_stripped' => false];
+    }
+
+    // Last resort for huge panels: strip clients but mark so WP never merges.
     foreach ($result['obj'] as $idx => $ib) {
         if (!is_array($ib)) {
             continue;
@@ -227,8 +252,9 @@ function trim_inbounds_list_result(array $result): array
         }
         $result['obj'][$idx] = $ib;
     }
+    $result['_xui_clients_stripped'] = true;
 
-    return $result;
+    return ['result' => $result, 'clients_stripped' => true];
 }
 
 $login = relay_login($panel_url, $user, $pass);
@@ -264,7 +290,8 @@ if (!$req['ok']) {
 
 $result = $req['result'];
 if (is_array($result) && stripos($endpoint, 'inbounds/list') !== false) {
-    $result = trim_inbounds_list_result($result);
+    $trimmed = maybe_trim_inbounds_list_result($result);
+    $result  = $trimmed['result'];
 }
 
 echo json_encode(['ok' => true, 'result' => $result], JSON_UNESCAPED_UNICODE);
