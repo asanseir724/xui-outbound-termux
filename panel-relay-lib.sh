@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260709-v12"
+PANEL_RELAY_VERSION="20260719-v13"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -161,3 +161,9 @@ process_panel_jobs_once() {
     rm -rf "$tmp_dir" 2>/dev/null
     return 0
 }
+
+# Run HooshPay jobs in the same worker when this file is sourced.
+if [ -f "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/hooshpay-relay-lib.sh" ]; then
+    # shellcheck source=hooshpay-relay-lib.sh
+    . "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/hooshpay-relay-lib.sh"
+fi

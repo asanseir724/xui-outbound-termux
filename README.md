@@ -145,6 +145,29 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 
 ---
 
+## درگاه هوش‌پی از طریق VPS (HooshPay Relay)
+
+اگر هاست وردپرس به `pay.hooshnet.com` دسترسی ندارد، همان سرویس `xui-panel-relay` درخواست‌های API هوش‌پی (ساخت فاکتور، verify، استعلام) را از صف وردپرس می‌گیرد و اجرا می‌کند.
+
+### تنظیم در وردپرس
+
+1. **تنظیمات → درگاه هوش‌پی**
+2. فیلد **«دسترسی API هوش‌پی»** را روی **از طریق واسط (VPS)** بگذارید
+3. کلید API و Secret را مثل قبل ذخیره کنید
+
+وب‌هوک پرداخت همچنان مستقیم به سایت شما می‌آید (`callback_url`)؛ فقط فراخوانی API خروجی از VPS رد می‌شود.
+
+### روی VPS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
+systemctl restart xui-panel-relay
+journalctl -u xui-panel-relay -f
+# باید خطوط «HooshPay relay» را هنگام پرداخت ببینید
+```
+
+---
+
 ## پیش‌نیاز در وردپرس
 
 1. وارد **مدیریت → Outbound Sync** شوید.

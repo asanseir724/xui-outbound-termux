@@ -40,7 +40,7 @@ if [ -z "$src" ]; then
 fi
 
 echo "==> Updating scripts in $INSTALL_DIR (config untouched)…"
-for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh enable-free-config-probe.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
+for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php hooshpay-relay-lib.sh hooshpay-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh enable-free-config-probe.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
     if [ -f "$src/$f" ]; then
         cp -f "$src/$f" "$INSTALL_DIR/$f"
     fi
@@ -88,6 +88,10 @@ if grep -q '^XUI_SYNC_VERSION=' "$INSTALL_DIR/xui-sync.sh" 2>/dev/null; then
 fi
 if grep -q '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" 2>/dev/null; then
     relay_ver="$(grep '^PANEL_RELAY_VERSION=' "$INSTALL_DIR/panel-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
+fi
+hp_ver=""
+if grep -q '^HOOSHPAY_RELAY_VERSION=' "$INSTALL_DIR/hooshpay-relay-lib.sh" 2>/dev/null; then
+    hp_ver="$(grep '^HOOSHPAY_RELAY_VERSION=' "$INSTALL_DIR/hooshpay-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
 fi
 
 if grep -q '^FREE_CONFIG_PROBE_VERSION=' "$INSTALL_DIR/free-config-probe-lib.sh" 2>/dev/null; then
@@ -167,6 +171,9 @@ if [ -n "$relay_ver" ]; then
 fi
 if [ -n "${probe_ver:-}" ]; then
     echo "  نسخه free-config-probe: $probe_ver"
+fi
+if [ -n "${hp_ver:-}" ]; then
+    echo "  نسخه hooshpay-relay: $hp_ver"
 fi
 echo "  پنل را باز کنید و «اجرای همگام‌سازی الان» را بزنید."
 echo "  باید در لاگ ببینید: xui-sync $ver"

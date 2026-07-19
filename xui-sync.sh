@@ -330,6 +330,7 @@ sync_once() {
             log "Panel relay: skipped (xui-panel-relay service is active)"
         else
             process_panel_jobs_once || true
+            process_hooshpay_jobs_once 2>/dev/null || true
         fi
     fi
 
