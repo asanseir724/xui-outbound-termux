@@ -80,6 +80,12 @@ if [ -f "$STATE_DIR/config.sh" ] && [ ! -L "$INSTALL_DIR/config.sh" ]; then
     ln -sf "$STATE_DIR/config.sh" "$INSTALL_DIR/config.sh"
 fi
 
+# Migrate: add RELAY_INTERVAL_SEC if missing (panel relay poll interval).
+if [ -f "$STATE_DIR/config.sh" ] && ! grep -q '^RELAY_INTERVAL_SEC=' "$STATE_DIR/config.sh" 2>/dev/null; then
+    echo "==> Adding RELAY_INTERVAL_SEC=2 to config.sh"
+    printf '\n# Panel relay poll interval (seconds)\nRELAY_INTERVAL_SEC=2\n' >> "$STATE_DIR/config.sh"
+fi
+
 ver=""
 relay_ver=""
 probe_ver=""

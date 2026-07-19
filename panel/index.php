@@ -89,25 +89,27 @@ if ($AUTH_REQUIRED) {
 }
 
 $FIELDS = [
-    'SITE_URL'       => ['label' => 'آدرس سایت وردپرس', 'placeholder' => 'https://your-wp-site.com', 'type' => 'text'],
-    'MOBILE_TOKEN'   => ['label' => 'توکن اپ موبایل', 'placeholder' => 'از Outbound Sync کپی کنید', 'type' => 'text'],
-    'INTERVAL_MIN'   => ['label' => 'فاصله همگام‌سازی (دقیقه)', 'placeholder' => '60', 'type' => 'number'],
-    'SUB_USER_AGENT' => ['label' => 'User-Agent دریافت ساب', 'placeholder' => 'HiddifyNext/4.1.0 ...', 'type' => 'text'],
-    'PROXY_URL'      => ['label' => 'پراکسی ساب (فقط حالت Proxy هیدیفای)', 'placeholder' => 'socks5h://127.0.0.1:2334 — خالی برای حالت VPN', 'type' => 'text'],
-    'FETCH_TIMEOUT'  => ['label' => 'مهلت دریافت ساب (ثانیه)', 'placeholder' => '45', 'type' => 'number'],
+    'SITE_URL'            => ['label' => 'آدرس سایت وردپرس', 'placeholder' => 'https://your-wp-site.com', 'type' => 'text'],
+    'MOBILE_TOKEN'        => ['label' => 'توکن اپ موبایل', 'placeholder' => 'از Outbound Sync کپی کنید', 'type' => 'text'],
+    'INTERVAL_MIN'        => ['label' => 'فاصله همگام‌سازی (دقیقه)', 'placeholder' => '60', 'type' => 'number'],
+    'RELAY_INTERVAL_SEC'  => ['label' => 'فاصله poll رله پنل (ثانیه)', 'placeholder' => '2', 'type' => 'number'],
+    'SUB_USER_AGENT'      => ['label' => 'User-Agent دریافت ساب', 'placeholder' => 'HiddifyNext/4.1.0 ...', 'type' => 'text'],
+    'PROXY_URL'           => ['label' => 'پراکسی ساب (فقط حالت Proxy هیدیفای)', 'placeholder' => 'socks5h://127.0.0.1:2334 — خالی برای حالت VPN', 'type' => 'text'],
+    'FETCH_TIMEOUT'       => ['label' => 'مهلت دریافت ساب (ثانیه)', 'placeholder' => '45', 'type' => 'number'],
 ];
 
 $DEFAULTS = [
-    'SITE_URL'       => '',
-    'MOBILE_TOKEN'   => '',
-    'INTERVAL_MIN'   => '60',
-    'SUB_USER_AGENT' => 'HiddifyNext/4.1.0 (Android) v2rayNG/1.8.0',
-    'PROXY_URL'      => '',
-    'FETCH_TIMEOUT'  => '45',
-    'LOG_FILE'       => '',
+    'SITE_URL'           => '',
+    'MOBILE_TOKEN'       => '',
+    'INTERVAL_MIN'       => '60',
+    'RELAY_INTERVAL_SEC' => '2',
+    'SUB_USER_AGENT'     => 'HiddifyNext/4.1.0 (Android) v2rayNG/1.8.0',
+    'PROXY_URL'          => '',
+    'FETCH_TIMEOUT'      => '45',
+    'LOG_FILE'           => '',
 ];
 
-/** Parse KEY="value" lines from config.sh (bash-compatible). */
+/** Parse KEY="value" / KEY=123 lines from config.sh (bash-compatible). */
 function read_config(string $file, array $defaults): array {
     $cfg = $defaults;
     if (is_file($file)) {
@@ -116,6 +118,8 @@ function read_config(string $file, array $defaults): array {
                 $val = $m[2];
                 $val = str_replace(['\\"', '\\\\', '\\$', '\\`'], ['"', '\\', '$', '`'], $val);
                 $cfg[$m[1]] = $val;
+            } elseif (preg_match('/^\s*([A-Z_][A-Z0-9_]*)=([0-9]+)\s*$/', $line, $m)) {
+                $cfg[$m[1]] = $m[2];
             }
         }
     }
@@ -134,6 +138,8 @@ function write_config(string $file, array $cfg): bool {
     $lines[] = 'SITE_URL="' . bash_escape($cfg['SITE_URL']) . '"';
     $lines[] = 'MOBILE_TOKEN="' . bash_escape($cfg['MOBILE_TOKEN']) . '"';
     $lines[] = 'INTERVAL_MIN=' . (int) $cfg['INTERVAL_MIN'];
+    $relaySec = max(1, min(30, (int) ($cfg['RELAY_INTERVAL_SEC'] ?? 2)));
+    $lines[] = 'RELAY_INTERVAL_SEC=' . $relaySec;
     $lines[] = 'SUB_USER_AGENT="' . bash_escape($cfg['SUB_USER_AGENT']) . '"';
     $lines[] = 'PROXY_URL="' . bash_escape($cfg['PROXY_URL']) . '"';
     $lines[] = 'FETCH_TIMEOUT=' . (int) $cfg['FETCH_TIMEOUT'];
@@ -328,10 +334,10 @@ function h($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
 
 $FIELD_GROUPS = [
     'اتصال وردپرس' => ['SITE_URL', 'MOBILE_TOKEN'],
-    'زمان‌بندی'     => ['INTERVAL_MIN', 'FETCH_TIMEOUT'],
-    'دریافت ساب'    => ['SUB_USER_AGENT', 'PROXY_URL'],
+    'زمان‌بندی'     => ['INTERVAL_MIN', 'RELAY_INTERVAL_SEC', 'FETCH_TIMEOUT'],
+    'دریافت ساب'   => ['SUB_USER_AGENT', 'PROXY_URL'],
 ];
-$FIELD_GRID = ['INTERVAL_MIN', 'FETCH_TIMEOUT'];
+$FIELD_GRID = ['INTERVAL_MIN', 'RELAY_INTERVAL_SEC', 'FETCH_TIMEOUT'];
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">

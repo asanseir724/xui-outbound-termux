@@ -39,7 +39,7 @@ LAST_LOADED_SITE_URL=""
 load_config() {
     # shellcheck source=/dev/null
     . "$CONFIG_FILE"
-    RELAY_INTERVAL_SEC="${RELAY_INTERVAL_SEC:-4}"
+    RELAY_INTERVAL_SEC="${RELAY_INTERVAL_SEC:-2}"
     LOG_FILE="${LOG_FILE:-/var/log/xui-outbound/sync.log}"
     if [ -n "${LAST_LOADED_SITE_URL:-}" ] && [ "${LAST_LOADED_SITE_URL}" != "${SITE_URL:-}" ]; then
         REST_STYLE=""
