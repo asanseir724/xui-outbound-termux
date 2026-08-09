@@ -2,23 +2,20 @@
 #
 # Pick & install the best Persian-capable Ollama model for XUI Telegram AI.
 #
-# Priority (by free RAM + free disk):
-#   1) partai/dorna-llama3:8b-instruct-q4_0  — قوی‌ترین فارسی زیر ۱۰B (~5GB)
-#   2) mshojaei77/gemma3persian               — فاین‌تیون فارسی ۴B (~4GB)
-#   3) qwen2.5:3b                            — چندزبانه خوب (~2GB)
-#   4) qwen2.5:1.5b                          — سبک (~1GB) — مناسب VPSهای ۲GB
+# If registry.ollama.ai times out (common), falls back to HuggingFace GGUF
+# + `ollama create` for qwen2.5:1.5b / 3b.
 #
 #   curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/install-persian-ai.sh | bash
 #   FORCE_MODEL=qwen2.5:1.5b bash install-persian-ai.sh
-#   WITH_SWAP=1 bash install-persian-ai.sh   # فقط اگر دیسک آزاد ≥ ۶GB
 #
 set -euo pipefail
 
 STATE_DIR="${STATE_DIR:-/etc/xui-outbound}"
 FORCE_MODEL="${FORCE_MODEL:-}"
 WITH_SWAP="${WITH_SWAP:-0}"
-SWAP_GB="${SWAP_GB:-2}"   # پیش‌فرض ۲G (نه ۴G) تا دیسک ۱۵G پر نشود
+SWAP_GB="${SWAP_GB:-2}"
 OLLAMA_HOME="${OLLAMA_HOME:-/usr/share/ollama/.ollama}"
+PULL_RETRIES="${PULL_RETRIES:-5}"
 
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
@@ -35,16 +32,13 @@ disk_free_mb() {
 cleanup_ollama_partials() {
     echo "==> Cleaning incomplete Ollama downloads…"
     find "$OLLAMA_HOME/models/blobs" -type f \( -name '*-partial*' -o -name '*.tmp' \) -delete 2>/dev/null || true
-    # orphan huge partials sometimes lack the suffix on crash
-    find "$OLLAMA_HOME/models/blobs" -type f -name 'sha256-*-partial*' -delete 2>/dev/null || true
 }
 
 remove_xui_swap_if_tight() {
-    local free_mb want_mb
+    local free_mb
     free_mb="$(disk_free_mb)"
-    want_mb=2500
-    if [ "${free_mb:-0}" -lt "$want_mb" ] && [ -f /swap-xui-ai ]; then
-        echo "==> Disk tight (${free_mb}MB free) — removing /swap-xui-ai to free space…"
+    if [ "${free_mb:-0}" -lt 2500 ] && [ -f /swap-xui-ai ]; then
+        echo "==> Disk tight (${free_mb}MB free) — removing /swap-xui-ai…"
         swapoff /swap-xui-ai 2>/dev/null || true
         rm -f /swap-xui-ai
         sed -i '\#/swap-xui-ai#d' /etc/fstab 2>/dev/null || true
@@ -58,34 +52,22 @@ ensure_swap() {
     free_mb="$(disk_free_mb)"
     need_mb=$((want_gb * 1024 + 2500))
     if [ "${free_mb:-0}" -lt "$need_mb" ]; then
-        echo "[WARN] Not enough disk for ${want_gb}G swap (free=${free_mb}MB, need≥${need_mb}MB) — skip swap."
+        echo "[WARN] Not enough disk for ${want_gb}G swap — skip."
         return 1
     fi
     if swapon --show 2>/dev/null | grep -q .; then
-        echo "==> Swap already present:"
         swapon --show || true
         return 0
     fi
     if [ -f "$swapfile" ]; then
-        chmod 600 "$swapfile"
-        mkswap "$swapfile" >/dev/null
-        swapon "$swapfile" || true
+        chmod 600 "$swapfile"; mkswap "$swapfile" >/dev/null; swapon "$swapfile" || true
         return 0
     fi
-    echo "==> Creating ${want_gb}G swap at $swapfile…"
-    if command -v fallocate >/dev/null 2>&1; then
-        fallocate -l "${want_gb}G" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count=$((want_gb * 1024)) status=progress
-    else
-        dd if=/dev/zero of="$swapfile" bs=1M count=$((want_gb * 1024)) status=progress
-    fi
-    chmod 600 "$swapfile"
-    mkswap "$swapfile"
-    swapon "$swapfile"
-    if ! grep -q "$swapfile" /etc/fstab 2>/dev/null; then
-        echo "$swapfile none swap sw 0 0" >> /etc/fstab
-    fi
+    echo "==> Creating ${want_gb}G swap…"
+    fallocate -l "${want_gb}G" "$swapfile" 2>/dev/null || dd if=/dev/zero of="$swapfile" bs=1M count=$((want_gb * 1024)) status=progress
+    chmod 600 "$swapfile"; mkswap "$swapfile"; swapon "$swapfile"
+    grep -q "$swapfile" /etc/fstab 2>/dev/null || echo "$swapfile none swap sw 0 0" >> /etc/fstab
     sysctl -w vm.swappiness=30 >/dev/null || true
-    swapon --show || true
 }
 
 model_need_mb() {
@@ -96,7 +78,81 @@ model_need_mb() {
     esac
 }
 
-# --- recovery first ---
+model_already_local() {
+    local m="$1"
+    ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qx "$m" && return 0
+    ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -q "^${m}:" && return 0
+    return 1
+}
+
+# Retry ollama pull (TLS to registry.ollama.ai often flakes)
+pull_registry() {
+    local m="$1" i=1
+    while [ "$i" -le "$PULL_RETRIES" ]; do
+        echo "==> ollama pull $m (try $i/$PULL_RETRIES)…"
+        cleanup_ollama_partials
+        if ollama pull "$m"; then
+            return 0
+        fi
+        sleep $((i * 3))
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# HuggingFace GGUF → ollama create (bypass registry.ollama.ai)
+install_from_hf_gguf() {
+    local tag="$1"
+    local url=""
+    local gguf=""
+    case "$tag" in
+        qwen2.5:1.5b)
+            # Q4_K_M ~1GB — fits 2GB VPS
+            url="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+            gguf="/opt/xui-outbound/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+            ;;
+        qwen2.5:3b)
+            url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+            gguf="/opt/xui-outbound/models/qwen2.5-3b-instruct-q4_k_m.gguf"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+
+    mkdir -p /opt/xui-outbound/models
+    if [ ! -f "$gguf" ] || [ "$(stat -c%s "$gguf" 2>/dev/null || echo 0)" -lt 100000000 ]; then
+        echo "==> Downloading GGUF from HuggingFace…"
+        echo "    $url"
+        # mirrors / retries help when ollama registry is blocked
+        if ! curl -fL --retry 5 --retry-delay 4 --connect-timeout 30 --max-time 0 \
+            -o "$gguf.partial" "$url"; then
+            # hf-mirror (often works when huggingface.co is slow)
+            local mirror="https://hf-mirror.com/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+            if [ "$tag" = "qwen2.5:3b" ]; then
+                mirror="https://hf-mirror.com/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+            fi
+            echo "==> Retry via hf-mirror…"
+            curl -fL --retry 5 --retry-delay 4 --connect-timeout 30 --max-time 0 \
+                -o "$gguf.partial" "$mirror" || return 1
+        fi
+        mv -f "$gguf.partial" "$gguf"
+    fi
+
+    local modelfile="/tmp/xui-Modelfile.$$"
+    cat >"$modelfile" <<EOF
+FROM $gguf
+PARAMETER temperature 0.7
+PARAMETER num_ctx 2048
+PARAMETER num_predict 160
+SYSTEM تو یک کاربر عادی ایرانی در گروه تلگرام هستی؛ کوتاه و محاوره‌ای جواب بده.
+EOF
+    echo "==> ollama create $tag from local GGUF…"
+    ollama create "$tag" -f "$modelfile"
+    rm -f "$modelfile"
+    return 0
+}
+
 echo "==> Disk before cleanup: $(df -h / | awk 'NR==2{print $4}') free"
 remove_xui_swap_if_tight
 cleanup_ollama_partials
@@ -133,17 +189,14 @@ pick_model() {
     if swapon --show 2>/dev/null | grep -q .; then
         effective=$((avail_mb + SWAP_GB * 600))
     fi
-    local cand=""
+    local cand="qwen2.5:1.5b"
     if { [ "$effective" -ge 6500 ] || [ "$total_mb" -ge 7500 ]; } && [ "$free_disk_mb" -ge 5500 ]; then
         cand="partai/dorna-llama3:8b-instruct-q4_0"
     elif { [ "$effective" -ge 4500 ] || [ "$total_mb" -ge 5500 ]; } && [ "$free_disk_mb" -ge 4500 ]; then
         cand="mshojaei77/gemma3persian"
-    elif { [ "$effective" -ge 2800 ] || [ "$total_mb" -ge 3500 ] || [ "$WITH_SWAP" = "1" ]; } && [ "$free_disk_mb" -ge 2500 ]; then
+    elif { [ "$effective" -ge 2800 ] || [ "$total_mb" -ge 3500 ]; } && [ "$free_disk_mb" -ge 2500 ]; then
         cand="qwen2.5:3b"
-    else
-        cand="qwen2.5:1.5b"
     fi
-    # hard disk gate
     local need
     need="$(model_need_mb "$cand")"
     if [ "$free_disk_mb" -lt "$need" ]; then
@@ -154,51 +207,34 @@ pick_model() {
 }
 
 MODEL="$(pick_model)"
-echo "==> Selected model: $MODEL (needs ~$(model_need_mb "$MODEL")MB free disk)"
+echo "==> Selected model: $MODEL"
 
-if [ "$free_disk_mb" -lt "$(model_need_mb "$MODEL")" ]; then
-    echo "[ERROR] Not enough disk for $MODEL. Free space and retry." >&2
-    df -h /
-    exit 1
-fi
-
-pull_one() {
-    local m="$1"
-    cleanup_ollama_partials
-    ollama pull "$m"
-}
-
-pull_ok=0
-if pull_one "$MODEL"; then
+if model_already_local "$MODEL"; then
+    echo "==> Model already present locally — skip download."
     pull_ok=1
 else
-    echo "[WARN] pull failed for $MODEL — trying fallbacks…"
-    cleanup_ollama_partials
-    for fb in qwen2.5:1.5b qwen2.5:3b; do
-        [ "$fb" = "$MODEL" ] && continue
-        need="$(model_need_mb "$fb")"
-        if [ "$(disk_free_mb)" -lt "$need" ]; then
-            echo "==> Skip $fb (disk free=$(disk_free_mb)MB < ${need}MB)"
-            continue
-        fi
-        echo "==> Fallback: $fb"
-        if pull_one "$fb"; then
-            MODEL="$fb"
+    pull_ok=0
+    if pull_registry "$MODEL"; then
+        pull_ok=1
+    else
+        echo "[WARN] registry.ollama.ai failed — trying HuggingFace GGUF…"
+        if install_from_hf_gguf "$MODEL"; then
             pull_ok=1
-            break
+        elif [ "$MODEL" != "qwen2.5:1.5b" ] && install_from_hf_gguf "qwen2.5:1.5b"; then
+            MODEL="qwen2.5:1.5b"
+            pull_ok=1
         fi
-        cleanup_ollama_partials
-    done
+    fi
 fi
 
-if [ "$pull_ok" -ne 1 ]; then
-    echo "[ERROR] could not pull any model — disk/RAM too tight." >&2
+if [ "${pull_ok:-0}" -ne 1 ]; then
+    echo "[ERROR] could not install model (registry TLS / network)." >&2
+    echo "    Check: curl -I https://registry.ollama.ai" >&2
+    echo "    Or:    curl -I https://huggingface.co" >&2
     df -h /
-    du -sh "$OLLAMA_HOME" /swap-xui-ai 2>/dev/null || true
     exit 1
 fi
 
-# Wire config for AI relay
 CFG="$STATE_DIR/config.sh"
 mkdir -p "$STATE_DIR"
 if [ -f "$CFG" ]; then
@@ -207,22 +243,20 @@ if [ -f "$CFG" ]; then
     else
         printf '\nXUI_AI_MODEL="%s"\n' "$MODEL" >> "$CFG"
     fi
-    if ! grep -q '^XUI_AI_ENDPOINT=' "$CFG" 2>/dev/null; then
-        printf 'XUI_AI_ENDPOINT="http://127.0.0.1:11434"\n' >> "$CFG"
-    fi
+    grep -q '^XUI_AI_ENDPOINT=' "$CFG" 2>/dev/null || printf 'XUI_AI_ENDPOINT="http://127.0.0.1:11434"\n' >> "$CFG"
 else
     printf 'XUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="%s"\n' "$MODEL" >"$CFG"
 fi
 
 echo "==> Persian smoke test…"
-smoke="$(curl -fsS --max-time 90 http://127.0.0.1:11434/api/chat -d "$(jq -n \
+smoke="$(curl -fsS --max-time 120 http://127.0.0.1:11434/api/chat -d "$(jq -n \
     --arg m "$MODEL" \
     '{model:$m,stream:false,messages:[{role:"system",content:"فقط فارسی کوتاه جواب بده."},{role:"user",content:"با یک جمله خودت را معرفی کن."}],options:{num_predict:60,temperature:0.7}}')" 2>/dev/null || true)"
 reply="$(printf '%s' "$smoke" | jq -r '.message.content // empty' 2>/dev/null || true)"
 if [ -n "$reply" ]; then
     echo "    reply: $reply"
 else
-    echo "[WARN] smoke reply empty — try: ollama run $MODEL"
+    echo "[WARN] smoke empty — first load can be slow: ollama run $MODEL"
 fi
 
 systemctl restart xui-panel-relay 2>/dev/null || true
