@@ -129,6 +129,7 @@ case "$MODE" in
         detect_rest_style || true
         process_panel_jobs_once
         process_hooshpay_jobs_once 2>/dev/null || true
+        process_ai_jobs_once 2>/dev/null || true
         ;;
     loop)
         load_config
@@ -141,6 +142,7 @@ case "$MODE" in
             detect_rest_style || true
             process_panel_jobs_once || true
             process_hooshpay_jobs_once 2>/dev/null || true
+            process_ai_jobs_once 2>/dev/null || true
             sleep "$RELAY_INTERVAL_SEC"
         done
         ;;

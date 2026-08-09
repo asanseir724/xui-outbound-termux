@@ -40,7 +40,7 @@ if [ -z "$src" ]; then
 fi
 
 echo "==> Updating scripts in $INSTALL_DIR (config untouched)…"
-for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php hooshpay-relay-lib.sh hooshpay-relay-exec.php free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh enable-free-config-probe.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
+for f in xui-sync.sh xui-panel-relay.sh xui-free-config-probe.sh panel-relay-lib.sh free-config-probe-lib.sh panel-relay-exec.php hooshpay-relay-lib.sh hooshpay-relay-exec.php ai-relay-lib.sh ai-relay-exec.php install-ollama.sh free-config-probe-exec.php free-config-probe-bootstrap.php install-xray.sh enable-free-config-probe.sh xui-services.sh install-vps.sh update-vps.sh config.example.sh; do
     if [ -f "$src/$f" ]; then
         cp -f "$src/$f" "$INSTALL_DIR/$f"
     fi
@@ -98,6 +98,14 @@ fi
 hp_ver=""
 if grep -q '^HOOSHPAY_RELAY_VERSION=' "$INSTALL_DIR/hooshpay-relay-lib.sh" 2>/dev/null; then
     hp_ver="$(grep '^HOOSHPAY_RELAY_VERSION=' "$INSTALL_DIR/hooshpay-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
+fi
+ai_ver=""
+if grep -q '^AI_RELAY_VERSION=' "$INSTALL_DIR/ai-relay-lib.sh" 2>/dev/null; then
+    ai_ver="$(grep '^AI_RELAY_VERSION=' "$INSTALL_DIR/ai-relay-lib.sh" | head -n1 | cut -d'"' -f2)"
+fi
+# Migrate AI endpoint defaults into config if missing
+if [ -f "$STATE_DIR/config.sh" ] && ! grep -q '^XUI_AI_ENDPOINT=' "$STATE_DIR/config.sh" 2>/dev/null; then
+    printf '\n# Local Ollama for Telegram AI relay\nXUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="qwen2.5:3b"\n' >> "$STATE_DIR/config.sh"
 fi
 
 if grep -q '^FREE_CONFIG_PROBE_VERSION=' "$INSTALL_DIR/free-config-probe-lib.sh" 2>/dev/null; then
@@ -181,6 +189,10 @@ fi
 if [ -n "${hp_ver:-}" ]; then
     echo "  نسخه hooshpay-relay: $hp_ver"
 fi
+if [ -n "${ai_ver:-}" ]; then
+    echo "  نسخه ai-relay: $ai_ver"
+fi
 echo "  پنل را باز کنید و «اجرای همگام‌سازی الان» را بزنید."
+echo "  برای AI تلگرام: bash /opt/xui-outbound/install-ollama.sh"
 echo "  باید در لاگ ببینید: xui-sync $ver"
 echo "=================================================="

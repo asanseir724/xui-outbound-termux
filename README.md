@@ -54,6 +54,20 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 | بررسی SITE_URL و توکن | `grep SITE_URL /etc/xui-outbound/config.sh` |
 | به‌روزرسانی از GitHub | `curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh \| bash` |
 
+### هوش مصنوعی تلگرام (Ollama روی VPS)
+
+قلب تپنده وردپرس jobهای چت را به همین `xui-panel-relay` می‌فرستد؛ مدل روی VPS اجرا می‌شود (هاست اشتراکی نمی‌تواند Ollama را اجرا کند).
+
+```bash
+# بعد از update-vps:
+curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
+bash /opt/xui-outbound/install-ollama.sh
+# یا مدل سبک‌تر:
+MODEL=qwen2.5:1.5b bash /opt/xui-outbound/install-ollama.sh
+```
+
+در لاگ رله باید خطوط `AI relay:` دیده شود. در وردپرس حالت «رله از طریق سرویس واسط» را انتخاب و «تست اتصال مدل» را بزنید.
+
 ### نصب / تعمیر Xray روی VPS
 
 برای تست واقعی کانفیگ رایگان (`xray-real-delay`) باید باینری Xray روی همان VPS باشد.

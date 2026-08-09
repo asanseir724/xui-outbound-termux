@@ -39,6 +39,11 @@ FETCH_RETRY_DELAY=15
 # فاصله بین هر poll برای jobهای API پنل خارجی (ثانیه) — سرویس xui-panel-relay
 RELAY_INTERVAL_SEC=2
 
+# هوش مصنوعی محلی روی همین VPS (Ollama) — jobهای Telegram AI از وردپرس
+# نصب: bash /opt/xui-outbound/install-ollama.sh
+XUI_AI_ENDPOINT="http://127.0.0.1:11434"
+XUI_AI_MODEL="qwen2.5:3b"
+
 # فاصله بین هر poll برای تست کانفیگ رایگان (ثانیه) — سرویس xui-free-config-probe
 PROBE_INTERVAL_SEC=5
 # چند job در هر batch از هاست بگیر (حداکثر ۴۰)

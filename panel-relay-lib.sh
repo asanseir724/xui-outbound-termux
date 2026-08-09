@@ -5,7 +5,7 @@
 #
 # shellcheck disable=SC2034
 
-PANEL_RELAY_VERSION="20260720-v16"
+PANEL_RELAY_VERSION="20260720-v17"
 
 # True when a dedicated relay loop is already running (avoid duplicate workers).
 should_skip_sync_relay() {
@@ -34,6 +34,27 @@ process_panel_jobs_once() {
 
     if [ -z "${SITE_URL:-}" ] || [ -z "${MOBILE_TOKEN:-}" ]; then
         return 0
+    fi
+
+    local script_dir php_exec
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+    php_exec="$script_dir/panel-relay-exec.php"
+
+    # Auto-pull slim helpers from WordPress (fixes huge inbound get/:id truncation).
+    local bin_base="${SITE_URL%/}/wp-content/plugins/xui-vpn-manager/bin"
+    if curl -fsSL --connect-timeout 8 --max-time 25 \
+        "$bin_base/panel-relay-exec.php.txt" -o "$php_exec.tmp" 2>/dev/null \
+        && grep -q 'maybe_trim_inbounds_list_result' "$php_exec.tmp" 2>/dev/null; then
+        mv -f "$php_exec.tmp" "$php_exec"
+    else
+        rm -f "$php_exec.tmp" 2>/dev/null
+    fi
+    if curl -fsSL --connect-timeout 8 --max-time 25 \
+        "$bin_base/panel-relay-lib.sh.txt" -o "$script_dir/panel-relay-lib.sh.tmp" 2>/dev/null \
+        && grep -q 'NEVER drop .obj' "$script_dir/panel-relay-lib.sh.tmp" 2>/dev/null; then
+        mv -f "$script_dir/panel-relay-lib.sh.tmp" "$script_dir/panel-relay-lib.sh"
+    else
+        rm -f "$script_dir/panel-relay-lib.sh.tmp" 2>/dev/null
     fi
 
     local lock_dir lock_file
@@ -95,11 +116,9 @@ process_panel_jobs_once() {
         return 0
     fi
 
-    log "Panel relay: $job_count job(s) (relay panels on host: $relay_count)"
+    log "Panel relay: $job_count job(s) (relay panels on host: $relay_count) ver=$PANEL_RELAY_VERSION"
 
-    local script_dir php_exec i
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-    php_exec="$script_dir/panel-relay-exec.php"
+    local i
     if [ ! -f "$php_exec" ]; then
         log "[WARN] panel-relay-exec.php not found — skip panel jobs"
         rm -rf "$tmp_dir" 2>/dev/null
@@ -119,19 +138,30 @@ process_panel_jobs_once() {
             ok="$(printf '%s' "$exec_out" | jq -r '.ok // false' 2>/dev/null)"
             if [ "$ok" = "true" ]; then
                 result_json="$(printf '%s' "$exec_out" | jq -c '.result' 2>/dev/null)"
-                if [ "$(printf '%s' "$result_json" | wc -c)" -gt 80000 ]; then
-                    result_json="$(printf '%s' "$exec_out" | jq -c '
-                        .result as $r |
-                        if ($r.obj | type) == "array" then
-                          {success: ($r.success // true), obj: [
-                            $r.obj[] | del(.clientStats)
-                          ],
-                          _xui_clients_stripped: false}
+                # Slim large inbound payloads. NEVER drop .obj (old bug wiped get/:id results).
+                if [ "$(printf '%s' "$result_json" | wc -c)" -gt 60000 ]; then
+                    result_json="$(printf '%s' "$result_json" | jq -c '
+                        def slim_client:
+                          {email: .email, id: .id, password: .password, subId: .subId, enable: .enable}
+                          | with_entries(select(.value != null));
+                        def slim_settings:
+                          (if type == "string" then (fromjson? // {}) else . end)
+                          | .clients = ((.clients // []) | map(slim_client))
+                          | {clients, decryption, fallbacks};
+                        def slim_ib:
+                          del(.clientStats, .listen, .sniffing, .allocate)
+                          | if .settings then .settings = (.settings | slim_settings | tojson) else . end;
+                        if (.obj | type) == "array" then
+                          .obj |= map(slim_ib) | ._xui_clients_slimmed = true
+                        elif (.obj | type) == "object" then
+                          .obj |= slim_ib | ._xui_clients_slimmed = true
                         else
-                          {success: ($r.success // true), msg: ($r.msg // "ok")}
+                          .
                         end
                     ' 2>/dev/null)"
-                    [ -z "$result_json" ] || [ "$result_json" = "null" ] && result_json='{"success":true,"msg":"trim fallback","_xui_clients_stripped":true}'
+                    if [ -z "$result_json" ] || [ "$result_json" = "null" ]; then
+                        result_json='{"success":false,"msg":"slim failed","_xui_clients_stripped":true}'
+                    fi
                 fi
                 submit_body="$(jq -n --argjson job_id "$jid" --argjson result "$result_json" \
                     '{job_id: $job_id, success: true, result: $result}')"
@@ -169,4 +199,10 @@ process_panel_jobs_once() {
 if [ -f "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/hooshpay-relay-lib.sh" ]; then
     # shellcheck source=hooshpay-relay-lib.sh
     . "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/hooshpay-relay-lib.sh"
+fi
+
+# Telegram AI chat jobs (Ollama on this VPS) — same worker loop.
+if [ -f "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/ai-relay-lib.sh" ]; then
+    # shellcheck source=ai-relay-lib.sh
+    . "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/ai-relay-lib.sh"
 fi
