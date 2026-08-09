@@ -10,6 +10,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/install-persian-ai.sh | bash
 #   FORCE_MODEL=qwen2.5:3b bash install-persian-ai.sh
+#   WITH_SWAP=1 bash install-persian-ai.sh   # روی VPSهای ۲GB برای رسیدن به 3b
 #
 set -euo pipefail
 
@@ -80,12 +81,17 @@ pick_model() {
         echo "$FORCE_MODEL"
         return
     fi
+    # With swap, treat effective capacity higher for qwen2.5:3b
+    local effective="$avail_mb"
+    if [ "$WITH_SWAP" = "1" ] || swapon --show 2>/dev/null | grep -q .; then
+        effective=$((avail_mb + SWAP_GB * 700))
+    fi
     # leave headroom for OS + xui-panel-relay
-    if [ "$avail_mb" -ge 6500 ] || [ "$total_mb" -ge 7500 ]; then
+    if [ "$effective" -ge 6500 ] || [ "$total_mb" -ge 7500 ]; then
         echo "partai/dorna-llama3:8b-instruct-q4_0"
-    elif [ "$avail_mb" -ge 4500 ] || [ "$total_mb" -ge 5500 ]; then
+    elif [ "$effective" -ge 4500 ] || [ "$total_mb" -ge 5500 ]; then
         echo "mshojaei77/gemma3persian"
-    elif [ "$avail_mb" -ge 2800 ] || [ "$total_mb" -ge 3500 ]; then
+    elif [ "$effective" -ge 2800 ] || [ "$total_mb" -ge 3500 ] || [ "$WITH_SWAP" = "1" ]; then
         echo "qwen2.5:3b"
     else
         echo "qwen2.5:1.5b"
