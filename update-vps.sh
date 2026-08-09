@@ -105,7 +105,10 @@ if grep -q '^AI_RELAY_VERSION=' "$INSTALL_DIR/ai-relay-lib.sh" 2>/dev/null; then
 fi
 # Migrate AI endpoint defaults into config if missing
 if [ -f "$STATE_DIR/config.sh" ] && ! grep -q '^XUI_AI_ENDPOINT=' "$STATE_DIR/config.sh" 2>/dev/null; then
-    printf '\n# Local Ollama for Telegram AI relay\nXUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="qwen2.5:3b"\n' >> "$STATE_DIR/config.sh"
+    printf '\n# Local Ollama for Telegram AI relay\nXUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="qwen2.5:1.5b"\nXUI_AI_SITE_URL=""\nXUI_AI_MOBILE_TOKEN=""\n' >> "$STATE_DIR/config.sh"
+fi
+if [ -f "$STATE_DIR/config.sh" ] && ! grep -q 'XUI_AI_SITE_URL' "$STATE_DIR/config.sh" 2>/dev/null; then
+    printf '\n# Optional: AI WordPress separate from panel SITE_URL\nXUI_AI_SITE_URL=""\nXUI_AI_MOBILE_TOKEN=""\n' >> "$STATE_DIR/config.sh"
 fi
 
 if grep -q '^FREE_CONFIG_PROBE_VERSION=' "$INSTALL_DIR/free-config-probe-lib.sh" 2>/dev/null; then

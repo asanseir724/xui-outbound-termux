@@ -214,12 +214,15 @@ ollama pull "$MODEL"
 CFG="$STATE_DIR/config.sh"
 if [ -f "$CFG" ]; then
     if ! grep -q '^XUI_AI_ENDPOINT=' "$CFG" 2>/dev/null; then
-        printf '\n# Local Ollama for Telegram AI relay\nXUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="%s"\n' "$MODEL" >> "$CFG"
+        printf '\n# Local Ollama for Telegram AI relay\nXUI_AI_ENDPOINT="http://127.0.0.1:11434"\nXUI_AI_MODEL="%s"\n# Optional: AI WordPress (if different from SITE_URL)\n# XUI_AI_SITE_URL="https://your-ai-site.ir"\n# XUI_AI_MOBILE_TOKEN=""\n' "$MODEL" >> "$CFG"
     else
         sed -i "s|^XUI_AI_MODEL=.*|XUI_AI_MODEL=\"$MODEL\"|" "$CFG" 2>/dev/null || true
         if ! grep -q '^XUI_AI_ENDPOINT=' "$CFG" 2>/dev/null; then
             printf 'XUI_AI_ENDPOINT="http://127.0.0.1:11434"\n' >> "$CFG"
         fi
+    fi
+    if ! grep -q 'XUI_AI_SITE_URL' "$CFG" 2>/dev/null; then
+        printf '\n# Optional: AI WordPress separate from panel SITE_URL\nXUI_AI_SITE_URL=""\nXUI_AI_MOBILE_TOKEN=""\n' >> "$CFG"
     fi
 fi
 

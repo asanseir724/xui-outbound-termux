@@ -58,6 +58,17 @@ curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/mai
 
 قلب تپنده وردپرس jobهای چت را به همین `xui-panel-relay` می‌فرستد؛ مدل روی VPS اجرا می‌شود (هاست اشتراکی نمی‌تواند Ollama را اجرا کند).
 
+می‌توانید سایت AI را **جدا از** `SITE_URL` پنل بگذارید (مثلاً پنل روی pronet24، AI روی سایت دیگر):
+
+```bash
+nano /etc/xui-outbound/config.sh
+# اضافه کنید:
+# XUI_AI_SITE_URL="https://YOUR-AI-SITE.ir"
+# XUI_AI_MOBILE_TOKEN="توکن اپ موبایل همان سایت"
+# XUI_AI_MODEL="qwen2.5:1.5b"
+systemctl restart xui-panel-relay
+```
+
 ```bash
 # بعد از update-vps:
 curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
@@ -66,7 +77,7 @@ bash /opt/xui-outbound/install-ollama.sh
 MODEL=qwen2.5:1.5b bash /opt/xui-outbound/install-ollama.sh
 ```
 
-در لاگ رله باید خطوط `AI relay:` دیده شود. در وردپرس حالت «رله از طریق سرویس واسط» را انتخاب و «تست اتصال مدل» را بزنید.
+در لاگ رله باید خطوط `AI relay: … ← https://YOUR-AI-SITE` دیده شود. در وردپرس آن سایت: حالت «رله از طریق سرویس واسط» + مدل مطابق VPS + «تست اتصال مدل».
 
 ### نصب / تعمیر Xray روی VPS
 

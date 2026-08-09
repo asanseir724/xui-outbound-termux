@@ -136,6 +136,9 @@ case "$MODE" in
         validate_config || exit 1
         detect_rest_style || true
         log "Panel relay loop started (every ${RELAY_INTERVAL_SEC}s) SITE_URL=${SITE_URL:-?}"
+        if [ -n "${XUI_AI_SITE_URL:-}" ]; then
+            log "AI relay target: ${XUI_AI_SITE_URL} (separate from panel SITE_URL)"
+        fi
         while true; do
             load_config
             validate_config || { sleep "$RELAY_INTERVAL_SEC"; continue; }

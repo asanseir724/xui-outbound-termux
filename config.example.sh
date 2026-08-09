@@ -42,7 +42,14 @@ RELAY_INTERVAL_SEC=2
 # هوش مصنوعی محلی روی همین VPS (Ollama) — jobهای Telegram AI از وردپرس
 # نصب: bash /opt/xui-outbound/install-ollama.sh
 XUI_AI_ENDPOINT="http://127.0.0.1:11434"
-XUI_AI_MODEL="qwen2.5:3b"
+XUI_AI_MODEL="qwen2.5:1.5b"
+#
+# اگر سایت AI با SITE_URL (پرونت/پنل) فرق دارد، این دو را پر کنید:
+# XUI_AI_SITE_URL="https://90908585.ir"
+# XUI_AI_MOBILE_TOKEN="توکن-اپ-همان-سایت"
+# اگر خالی بمانند از SITE_URL و MOBILE_TOKEN استفاده می‌شود.
+XUI_AI_SITE_URL=""
+XUI_AI_MOBILE_TOKEN=""
 
 # فاصله بین هر poll برای تست کانفیگ رایگان (ثانیه) — سرویس xui-free-config-probe
 PROBE_INTERVAL_SEC=5
