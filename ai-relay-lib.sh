@@ -10,7 +10,7 @@
 #
 # shellcheck disable=SC2034
 
-AI_RELAY_VERSION="20260809-v2"
+AI_RELAY_VERSION="20260809-v3"
 
 # Resolve AI WordPress target (may differ from panel SITE_URL).
 ai_relay_target() {

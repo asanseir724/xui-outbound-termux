@@ -1,10 +1,12 @@
 <?php
 /**
- * Execute one AI chat job for WordPress relay queue.
- * stdin: JSON { id, op, model, payload: { system, user, messages, max_tokens, temperature } }
- * stdout: JSON { ok:true, result:{ text } } or { ok:false, error }
+ * Execute one AI / utility job for WordPress relay queue.
+ * stdin: JSON { id, op, model, payload }
+ * stdout: JSON { ok:true, result:{...} } or { ok:false, error }
  *
- * Talks to local Ollama / OpenAI-compatible server on the VPS (default 127.0.0.1:11434).
+ * ops:
+ *  - chat (default): local Ollama
+ *  - proxy_fetch: download public SOCKS/HTTP lists on VPS and TCP-probe survivors
  */
 declare(strict_types=1);
 
@@ -15,9 +17,15 @@ if (!is_array($job)) {
     exit(1);
 }
 
+$op = strtolower(trim((string) ($job['op'] ?? 'chat')));
 $payload = $job['payload'] ?? [];
 if (!is_array($payload)) {
     $payload = [];
+}
+
+if ($op === 'proxy_fetch') {
+    echo json_encode(xui_proxy_fetch_job($payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit(0);
 }
 
 $model = trim((string) ($job['model'] ?? ''));
@@ -55,11 +63,11 @@ if ($messages === []) {
 }
 
 $maxTokens = (int) ($payload['max_tokens'] ?? 160);
-$maxTokens = max(40, min(280, $maxTokens));
+$maxTokens = max(40, min(560, $maxTokens));
 $temperature = (float) ($payload['temperature'] ?? 0.85);
 
 /**
- * @return array{ok:bool,text?:string,error?:string,http?:int}
+ * @return array{ok:bool,text?:string,error?:string,http?:int,data?:array}
  */
 function xui_ai_http_json(string $url, array $body, int $timeout = 55): array {
     $ch = curl_init($url);
@@ -88,6 +96,115 @@ function xui_ai_http_json(string $url, array $body, int $timeout = 55): array {
         return ['ok' => false, 'error' => 'bad json from LLM http=' . $code, 'http' => $code];
     }
     return ['ok' => true, 'data' => $decoded, 'http' => $code];
+}
+
+/**
+ * @param array<string,mixed> $payload
+ * @return array{ok:bool,result?:array,error?:string}
+ */
+function xui_proxy_fetch_job(array $payload): array {
+    $want = max(5, min(40, (int) ($payload['limit'] ?? 20)));
+    $urls = [
+        ['u' => 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=3000&country=all&ssl=all&anonymity=all', 't' => 'socks5'],
+        ['u' => 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all', 't' => 'http'],
+        ['u' => 'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt', 't' => 'socks5'],
+        ['u' => 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt', 't' => 'socks5'],
+        ['u' => 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt', 't' => 'socks5'],
+    ];
+    $candidates = [];
+    foreach ($urls as $row) {
+        $body = xui_http_get_body($row['u'], 10);
+        if ($body === '') {
+            continue;
+        }
+        foreach (preg_split('/\R+/', $body) ?: [] as $line) {
+            $line = trim($line);
+            if (!preg_match('/^(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})$/', $line, $m)) {
+                continue;
+            }
+            $port = (int) $m[2];
+            if ($port < 1 || $port > 65535) {
+                continue;
+            }
+            $candidates[] = ['host' => $m[1], 'port' => $port, 'type' => $row['t']];
+            if (count($candidates) >= 250) {
+                break 2;
+            }
+        }
+    }
+    if ($candidates === []) {
+        return ['ok' => false, 'error' => 'no proxy candidates from public lists'];
+    }
+
+    shuffle($candidates);
+    $alive = [];
+    $tested = 0;
+    foreach ($candidates as $c) {
+        if (count($alive) >= $want) {
+            break;
+        }
+        if ($tested >= 120) {
+            break;
+        }
+        $tested++;
+        $ms = xui_tcp_ping($c['host'], (int) $c['port'], 1.6);
+        if ($ms < 0) {
+            continue;
+        }
+        $alive[] = [
+            'host'       => $c['host'],
+            'port'       => (int) $c['port'],
+            'type'       => $c['type'],
+            'latency_ms' => $ms,
+        ];
+    }
+
+    if ($alive === []) {
+        return ['ok' => false, 'error' => 'no tcp-alive proxies after probe tested=' . $tested];
+    }
+
+    return [
+        'ok'     => true,
+        'result' => [
+            'proxies' => $alive,
+            'tested'  => $tested,
+            'found'   => count($candidates),
+            'alive'   => count($alive),
+            'text'    => 'proxy_fetch ok ' . count($alive),
+        ],
+    ];
+}
+
+function xui_http_get_body(string $url, int $timeout = 10): string {
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return '';
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_USERAGENT      => 'XUI-ProxyFetch/1.0',
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code >= 400 || !is_string($resp)) {
+        return '';
+    }
+    return $resp;
+}
+
+function xui_tcp_ping(string $host, int $port, float $timeout = 1.5): int {
+    $start = microtime(true);
+    $fp = @fsockopen($host, $port, $errno, $errstr, $timeout);
+    if (!$fp) {
+        return -1;
+    }
+    $ms = (int) round((microtime(true) - $start) * 1000);
+    fclose($fp);
+    return max(1, $ms);
 }
 
 $text = '';
