@@ -72,12 +72,15 @@ systemctl restart xui-panel-relay
 ```bash
 # بعد از update-vps:
 curl -fsSL https://raw.githubusercontent.com/asanseir724/xui-outbound-termux/main/update-vps.sh | bash
-bash /opt/xui-outbound/install-ollama.sh
-# یا مدل سبک‌تر:
+# بهترین مدل فارسی (با توجه به RAM سرور خودکار انتخاب می‌شود):
+bash /opt/xui-outbound/install-persian-ai.sh
+# یا مدل سبک‌تر دستی:
 MODEL=qwen2.5:1.5b bash /opt/xui-outbound/install-ollama.sh
 ```
 
-در لاگ رله باید خطوط `AI relay: … ← https://YOUR-AI-SITE` دیده شود. در وردپرس آن سایت: حالت «رله از طریق سرویس واسط» + مدل مطابق VPS + «تست اتصال مدل».
+ترتیب اولویت فارسی: `dorna-llama3 8b` → `gemma3persian` → `qwen2.5:3b` → `qwen2.5:1.5b`.
+
+در لاگ رله باید خطوط `AI relay: … ← https://YOUR-AI-SITE` دیده شود. در وردپرس آن سایت: حالت «رله از طریق سرویس واسط» + مدل مطابق خروجی اسکریپت + «تست اتصال مدل».
 
 ### نصب / تعمیر Xray روی VPS
 
