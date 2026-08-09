@@ -17,6 +17,10 @@ OLLAMA_VERSION="${OLLAMA_VERSION:-}" # e.g. v0.9.6 — empty = latest GitHub rel
 BIN_PATH="/usr/local/bin/ollama"
 LIB_DIR="/usr/local/lib/ollama"
 
+# For best Persian chat, prefer:
+#   bash /opt/xui-outbound/install-persian-ai.sh
+
+
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
         exec sudo -E bash "$0" "$@"
