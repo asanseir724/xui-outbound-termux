@@ -15,6 +15,8 @@ set -euo pipefail
 
 STATE_DIR="${STATE_DIR:-/etc/xui-outbound}"
 FORCE_MODEL="${FORCE_MODEL:-}"
+WITH_SWAP="${WITH_SWAP:-0}"   # WITH_SWAP=1 → فایل سواپ ۴G بساز تا qwen2.5:3b ممکن شود
+SWAP_GB="${SWAP_GB:-4}"
 
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
@@ -22,6 +24,40 @@ if [ "$(id -u)" -ne 0 ]; then
     fi
     echo "[ERROR] run as root" >&2
     exit 1
+fi
+
+ensure_swap() {
+    local want_gb="${1:-4}"
+    local swapfile="/swap-xui-ai"
+    if swapon --show 2>/dev/null | grep -q .; then
+        echo "==> Swap already present:"
+        swapon --show || true
+        return 0
+    fi
+    if [ -f "$swapfile" ]; then
+        chmod 600 "$swapfile"
+        mkswap "$swapfile" >/dev/null
+        swapon "$swapfile" || true
+        return 0
+    fi
+    echo "==> Creating ${want_gb}G swap at $swapfile (slow disk, helps load 3b)…"
+    if command -v fallocate >/dev/null 2>&1; then
+        fallocate -l "${want_gb}G" "$swapfile" || dd if=/dev/zero of="$swapfile" bs=1M count=$((want_gb * 1024)) status=progress
+    else
+        dd if=/dev/zero of="$swapfile" bs=1M count=$((want_gb * 1024)) status=progress
+    fi
+    chmod 600 "$swapfile"
+    mkswap "$swapfile"
+    swapon "$swapfile"
+    if ! grep -q "$swapfile" /etc/fstab 2>/dev/null; then
+        echo "$swapfile none swap sw 0 0" >> /etc/fstab
+    fi
+    sysctl -w vm.swappiness=40 >/dev/null || true
+    swapon --show || true
+}
+
+if [ "$WITH_SWAP" = "1" ]; then
+    ensure_swap "$SWAP_GB"
 fi
 
 if ! command -v ollama >/dev/null 2>&1; then
